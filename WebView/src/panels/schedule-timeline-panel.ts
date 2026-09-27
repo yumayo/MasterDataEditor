@@ -1,6 +1,6 @@
 import {findFilesAsync} from "../app/api";
 import type {InMemoryTableStore, TableDataChangeEvent} from "../data/in-memory-table-store";
-import type {SerializedFilters, TemporaryFilterMode} from "../editor/column-filter";
+import type {TemporaryFilters, TemporaryFilterMode} from "../editor/column-filter";
 import {getAppliedSettings} from "./settings-panel";
 import {SETTINGS_CHANGED_EVENT} from "../settings/settings-schema";
 import type {UiScrollPosition, UiStateStore} from "../app/ui-state";
@@ -35,7 +35,7 @@ interface ScheduleTimelineDateGroup {
     tables: Map<string, ScheduleTimelineTableEntry>;
 }
 
-type ScheduleTimelineNavigate = (tableName: string, filters: SerializedFilters, mode: TemporaryFilterMode) => void;
+type ScheduleTimelineNavigate = (tableName: string, filters: TemporaryFilters, mode: TemporaryFilterMode) => void;
 
 /**
  * 出力予定日・削除予定日を全テーブル横断で日付別に表示するパネル。
@@ -637,9 +637,9 @@ export class ScheduleTimelinePanel {
         return badge;
     }
 
-    private createFilters(tableEntry: ScheduleTimelineTableEntry): SerializedFilters {
+    private createFilters(tableEntry: ScheduleTimelineTableEntry): TemporaryFilters {
         const settings = getAppliedSettings();
-        const filters: SerializedFilters = {};
+        const filters: TemporaryFilters = {};
         const beginColumnName = settings.exportBeginDateColumnName.trim();
         const endColumnName = settings.exportEndDateColumnName.trim();
         if (beginColumnName !== '' && tableEntry.beginValues.size > 0) {

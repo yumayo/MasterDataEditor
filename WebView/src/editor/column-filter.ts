@@ -2,7 +2,17 @@
  * ユーザーデータ永続化用のフィルター表現（列名ベース）
  */
 export interface SerializedFilters {
+    [columnName: string]: string[] | {values: string[]; excludeEmpty: boolean};
+}
+
+/** ジャンプやスケジュールの一時条件は、永続設定と独立した値リストとして扱う。 */
+export interface TemporaryFilters {
     [columnName: string]: string[];
+}
+
+interface ColumnFilterCondition {
+    selectedValues: Set<string>;
+    excludeEmpty: boolean;
 }
 
 export type TemporaryFilterMode = 'and' | 'or';
@@ -11,7 +21,7 @@ export type TemporaryFilterMode = 'and' | 'or';
  * 列フィルター管理クラス
  *
  * 責務:
- * - 列ごとのフィルター状態（選択された値のセット）を管理
+ * - 列ごとのフィルター状態（選択された値と空セル除外）を管理
  * - ソート済みインデックスに対してフィルター条件を適用し、表示対象行インデックスを計算する
  * - 指定列のユニーク値リストを提供する
  *
@@ -20,16 +30,16 @@ export type TemporaryFilterMode = 'and' | 'or';
  */
 export class ColumnFilter {
     /**
-     * ストア列インデックス → 選択された値セットのマップ。
-     * 値セットが存在する列は「フィルター適用中」とみなす。
+     * ストア列インデックス → 選択値と空セル除外条件のマップ。
+     * 条件が存在する列は「フィルター適用中」とみなす。
      * セット内の値を持つ行のみ表示される。
      */
-    private readonly filterMap: Map<number, Set<string>>;
+    private readonly filterMap: Map<number, ColumnFilterCondition>;
     /**
      * ナビゲーション等で一時的に適用するフィルター。
      * ユーザー設定の永続化対象の filterMap とは分離し、serializeFilters() には含めない。
      */
-    private readonly temporaryFilterMap: Map<number, Set<string>>;
+    private readonly temporaryFilterMap: Map<number, ColumnFilterCondition>;
     private temporaryFilterMode: TemporaryFilterMode;
 
     constructor() {
@@ -41,21 +51,21 @@ export class ColumnFilter {
     /**
      * 指定ストア列にフィルターを適用する。
      * selectedValues に含まれる値を持つ行のみ表示対象となる。
-     * selectedValues が空の場合、全行が非表示になる（空セットも有効なフィルター状態）。
+     * selectedValues が空の場合、空セルだけを表示する。excludeEmpty も有効なら全行非表示。
      *
      * @param storeColumnIndex ストア（CSV）列インデックス（0始まり）
      */
-    applyFilter(storeColumnIndex: number, selectedValues: Set<string>): void {
+    applyFilter(storeColumnIndex: number, selectedValues: Set<string>, excludeEmpty: boolean): void {
         this.temporaryFilterMap.clear();
         this.temporaryFilterMode = 'and';
-        this.filterMap.set(storeColumnIndex, new Set(selectedValues));
+        this.filterMap.set(storeColumnIndex, {selectedValues: new Set(selectedValues), excludeEmpty});
     }
 
     /**
      * 一時フィルターを列名ベースの表現から復元して適用する。
      * 既存の永続フィルターは保持するが、一時フィルター適用中の表示判定では一時側を優先する。
      */
-    applyTemporaryFilters(serialized: SerializedFilters, storeColumnNames: readonly string[], mode: TemporaryFilterMode = 'and'): void {
+    applyTemporaryFilters(serialized: TemporaryFilters, storeColumnNames: readonly string[], mode: TemporaryFilterMode = 'and'): void {
         this.temporaryFilterMap.clear();
         this.temporaryFilterMode = mode;
         const nameToStoreIndex = new Map<string, number>();
@@ -65,7 +75,7 @@ export class ColumnFilter {
         for (const columnName of Object.keys(serialized)) {
             const storeColIdx = nameToStoreIndex.get(columnName);
             if (storeColIdx !== null && storeColIdx !== undefined) {
-                this.temporaryFilterMap.set(storeColIdx, new Set(serialized[columnName]));
+                this.temporaryFilterMap.set(storeColIdx, {selectedValues: new Set(serialized[columnName]), excludeEmpty: false});
             }
         }
     }
@@ -118,9 +128,9 @@ export class ColumnFilter {
         const effectiveFilterMap = this.getEffectiveFilterMap();
         if (effectiveFilterMap.size === 0) return sortedIndices;
         // filterMap の内容をスナップショットとして取り出す（forEach で Map を走査）
-        const filterEntries: Array<{ storeColumnIndex: number; selectedValues: Set<string> }> = [];
-        effectiveFilterMap.forEach((selectedValues, storeColumnIndex) => {
-            filterEntries.push({ storeColumnIndex, selectedValues });
+        const filterEntries: Array<ColumnFilterCondition & {storeColumnIndex: number}> = [];
+        effectiveFilterMap.forEach((condition, storeColumnIndex) => {
+            filterEntries.push({storeColumnIndex, ...condition});
         });
         if (this.temporaryFilterMap.size > 0 && this.temporaryFilterMode === 'or') {
             return sortedIndices.filter(storeRowIndex => {
@@ -134,10 +144,13 @@ export class ColumnFilter {
         return sortedIndices.filter(storeRowIndex => {
             const row = storeRows[storeRowIndex];
             // 全フィルター列で AND 条件を評価する
-            for (const { storeColumnIndex, selectedValues } of filterEntries) {
+            for (const {storeColumnIndex, selectedValues, excludeEmpty} of filterEntries) {
                 if (storeColumnIndex >= row.length) return false;
-                // 空文字列セルは常にフィルターを通過させる（リストに表示されない値のため）
-                if (row[storeColumnIndex] === '') continue;
+                // 空は格納値が空文字列のセルだけ。空白、0、false は通常の選択値として扱う。
+                if (row[storeColumnIndex] === '') {
+                    if (excludeEmpty) return false;
+                    continue;
+                }
                 if (!selectedValues.has(row[storeColumnIndex])) return false;
             }
             return true;
@@ -146,7 +159,7 @@ export class ColumnFilter {
 
     /**
      * 指定ストア列のユニーク値リストをソートして返す。
-     * 空文字列は除外する（リストに表示しないが、フィルター適用時は常に通過させる）。
+     * 空文字列は値リストから除外し、空セル除外条件で表示を制御する。
      *
      * @param storeColumnIndex ストア（CSV）列インデックス（0始まり）
      * @param storeRows ストアの全行データ
@@ -175,7 +188,14 @@ export class ColumnFilter {
     getSelectedValues(storeColumnIndex: number): Set<string> | null {
         const effectiveFilterMap = this.getEffectiveFilterMap();
         if (!effectiveFilterMap.has(storeColumnIndex)) return null;
-        return effectiveFilterMap.get(storeColumnIndex) as Set<string>;
+        return (effectiveFilterMap.get(storeColumnIndex) as ColumnFilterCondition).selectedValues;
+    }
+
+    /** 当該列の適用済み条件を返し、未適用列は空セルを通す。 */
+    excludesEmptyCells(storeColumnIndex: number): boolean {
+        const effectiveFilterMap = this.getEffectiveFilterMap();
+        if (!effectiveFilterMap.has(storeColumnIndex)) return false;
+        return (effectiveFilterMap.get(storeColumnIndex) as ColumnFilterCondition).excludeEmpty;
     }
 
     /**
@@ -186,13 +206,15 @@ export class ColumnFilter {
      * @param storeColumnNames ストア（CSV）の列名配列（storeColumnNames[storeColIndex] = 列名）
      */
     serializeFilters(storeColumnNames: readonly string[]): SerializedFilters {
-        const result: SerializedFilters = {};
-        this.filterMap.forEach((selectedValues, storeColumnIndex) => {
+        const entries: Array<[string, SerializedFilters[string]]> = [];
+        this.filterMap.forEach(({selectedValues, excludeEmpty}, storeColumnIndex) => {
             if (storeColumnIndex < storeColumnNames.length) {
-                result[storeColumnNames[storeColumnIndex]] = Array.from(selectedValues);
+                const values = Array.from(selectedValues);
+                // OFFは従来の配列表現を維持し、ONの列だけ追加条件を保存する。
+                entries.push([storeColumnNames[storeColumnIndex], excludeEmpty ? {values, excludeEmpty} : values]);
             }
         });
-        return result;
+        return Object.fromEntries(entries);
     }
 
     /**
@@ -214,12 +236,15 @@ export class ColumnFilter {
         for (const columnName of Object.keys(serialized)) {
             const storeColIdx = nameToStoreIndex.get(columnName);
             if (storeColIdx !== null && storeColIdx !== undefined) {
-                this.filterMap.set(storeColIdx, new Set(serialized[columnName]));
+                const condition = serialized[columnName];
+                this.filterMap.set(storeColIdx, Array.isArray(condition)
+                    ? {selectedValues: new Set(condition), excludeEmpty: false}
+                    : {selectedValues: new Set(condition.values), excludeEmpty: condition.excludeEmpty});
             }
         }
     }
 
-    private getEffectiveFilterMap(): Map<number, Set<string>> {
+    private getEffectiveFilterMap(): Map<number, ColumnFilterCondition> {
         return this.temporaryFilterMap.size > 0 ? this.temporaryFilterMap : this.filterMap;
     }
 }

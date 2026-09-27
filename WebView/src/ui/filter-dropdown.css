@@ -172,3 +172,12 @@
     padding: 2px 4px;
     margin-top: 2px;
 }
+
+/* 値リストの外に置き、検索結果が空でも操作できるようにする。 */
+.filter-exclude-empty.toggle-control {
+    width: auto;
+    height: 28px;
+    gap: 8px;
+    padding: 2px 8px;
+    font-size: 12px;
+}

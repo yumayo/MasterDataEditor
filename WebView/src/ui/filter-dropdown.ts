@@ -1,3 +1,4 @@
+import {ToggleControl} from "./toggle-control";
 import {ColumnFilter} from "../editor/column-filter";
 import {EditorTable} from "../editor/editor-table";
 import {parseReferenceExpression, isSimpleReference} from "../references/reference-expression";
@@ -21,6 +22,7 @@ export class FilterDropdown {
     private readonly element: HTMLElement;
     private readonly searchInput: HTMLInputElement;
     private readonly itemList: HTMLElement;
+    private readonly excludeEmptyToggle: ToggleControl;
     private readonly table: EditorTable;
     private readonly columnFilter: ColumnFilter;
     /**
@@ -80,6 +82,15 @@ export class FilterDropdown {
         this.itemList = document.createElement('div');
         this.itemList.classList.add('filter-item-list');
         this.element.appendChild(this.itemList);
+
+        // 値リストの検索・全選択とは独立した条件として、適用までDOM上に保持する。
+        const excludeEmptyLabel = document.createElement('label');
+        excludeEmptyLabel.classList.add('filter-exclude-empty');
+        this.excludeEmptyToggle = new ToggleControl(excludeEmptyLabel, '空セルを除外', false, []);
+        const excludeEmptyCaption = document.createElement('span');
+        excludeEmptyCaption.textContent = '空セルを除外';
+        excludeEmptyLabel.appendChild(excludeEmptyCaption);
+        this.element.appendChild(excludeEmptyLabel);
 
         // 適用ボタン
         const applyBtn = document.createElement('button');
@@ -146,6 +157,7 @@ export class FilterDropdown {
         // 検索ボックスをリセット（buildItems 前に行うことで絞り込み状態をリセットしてから構築する）
         this.searchInput.value = '';
         this.buildItems(columnIndex);
+        this.excludeEmptyToggle.updateChecked(this.columnFilter.excludesEmptyCells(this.table.getStoreColumnIndex(columnIndex)));
 
         // 位置決め: アイコン要素の直下に表示する
         const rect = anchorElement.getBoundingClientRect();
@@ -318,7 +330,7 @@ export class FilterDropdown {
         const oldFilters = this.table.serializeFilters();
         const storeColumnIndex = this.table.getStoreColumnIndex(this.currentColumnIndex);
         const selectedValues = this.collectCheckedValues();
-        this.columnFilter.applyFilter(storeColumnIndex, selectedValues);
+        this.columnFilter.applyFilter(storeColumnIndex, selectedValues, this.excludeEmptyToggle.isChecked());
         this.hide();
         this.table.applyFilterDisplay();
         // フィルター変更後の状態を記録する

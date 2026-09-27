@@ -1,3 +1,4 @@
+import {ToggleControl} from "../ui/toggle-control";
 import {readFileAsync, writeFileAsync, type FileScope} from "../app/api";
 import {TabButton} from "../tabs/tab-button";
 import {USER_SETTINGS_FILE, WORKSPACE_SETTINGS_FILE} from "../config/masterdataeditor-path";
@@ -571,31 +572,19 @@ export class SettingsPanel {
         const root = document.createElement('label');
         root.classList.add('settings-toggle', ...(definition.rootClassNames ?? []));
 
-        const input = document.createElement('input');
-        input.classList.add('settings-toggle-input', ...(definition.inputClassNames ?? []));
-        input.type = 'checkbox';
         let selectedValue = value === true;
-        input.checked = selectedValue;
-        input.addEventListener('change', () => {
-            this.commitSettingValue(key, input.checked, `save ${String(key)} failed`);
+        const toggle = new ToggleControl(root, definition.label, selectedValue, definition.inputClassNames ?? []);
+        toggle.onChange((checked) => {
+            this.commitSettingValue(key, checked, `save ${String(key)} failed`);
         });
-
-        const track = document.createElement('span');
-        track.classList.add('settings-toggle-track');
-        const thumb = document.createElement('span');
-        thumb.classList.add('settings-toggle-thumb');
-        track.appendChild(thumb);
-
-        root.appendChild(input);
-        root.appendChild(track);
         return {
             root,
             getValue: () => selectedValue,
             setValue: (nextValue: SettingValue) => {
                 selectedValue = nextValue === true;
-                input.checked = selectedValue;
+                toggle.updateChecked(selectedValue);
             },
-            shouldLetNativeTextHistoryHandle: (target: EventTarget) => target === input ? false : null,
+            shouldLetNativeTextHistoryHandle: (target: EventTarget) => toggle.isInputTarget(target) ? false : null,
         };
     }
 

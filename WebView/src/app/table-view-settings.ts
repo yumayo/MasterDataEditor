@@ -43,9 +43,15 @@ function parseTableViewSettings(value: unknown): TableViewSettings {
         if (typeof columnName !== 'string' || (direction !== 'asc' && direction !== 'desc')) throw new Error('テーブル表示設定のソートキーが不正です');
         return {columnName, direction};
     });
-    const filters: SerializedFilters = Object.fromEntries(Object.entries(requireRecord(record['filters'])).map(([columnName, values]) => {
-        if (!Array.isArray(values) || !values.every((value: unknown) => typeof value === 'string')) throw new Error('テーブル表示設定のフィルターが不正です');
-        return [columnName, [...values]];
+    const filters: SerializedFilters = Object.fromEntries(Object.entries(requireRecord(record['filters'])).map(([columnName, serialized]) => {
+        // 既存配列だけ空セル除外OFFへ移行し、新形式では値リストとbooleanの両方を検証する。
+        const condition = Array.isArray(serialized) ? {values: serialized, excludeEmpty: false} : requireRecord(serialized);
+        const values = condition['values'];
+        const excludeEmpty = condition['excludeEmpty'];
+        if (!Array.isArray(values) || !values.every((value: unknown) => typeof value === 'string') || typeof excludeEmpty !== 'boolean') {
+            throw new Error('テーブル表示設定のフィルターが不正です');
+        }
+        return [columnName, Array.isArray(serialized) ? [...values] : {values: [...values], excludeEmpty}];
     }));
     return {frozenColumnCount, frozenRightColumnCount, frozenRowCount, sortKeys, filters};
 }

@@ -36,7 +36,7 @@ import {NavigationHistory} from "./navigation-history";
 import {NotificationToast} from "../ui/notification";
 import {ErrorTooltip} from "../ui/error-tooltip";
 import type {SerializedSortKey} from "../editor/column-sorter";
-import type {SerializedFilters, TemporaryFilterMode} from "../editor/column-filter";
+import type {SerializedFilters, TemporaryFilters, TemporaryFilterMode} from "../editor/column-filter";
 import type {EditorAPI} from "../editor-api/editor-api-types";
 import {TableDefinitionEditor} from "./table-definition-editor";
 import type {EditTarget} from "./table-definition-editor";
@@ -1386,7 +1386,7 @@ export class Tab {
      * サイドバーの予定日タイムライン用: 指定テーブルを開き、一時フィルターを設定に関係なく適用する。
      * 通常のジャンプ時フィルター設定は参照ジャンプ向けのON/OFFとして維持し、この経路だけ強制適用する。
      */
-    async navigateToTableWithTemporaryFilterAsync(tableName: string, filters: SerializedFilters, mode: TemporaryFilterMode = 'and'): Promise<void> {
+    async navigateToTableWithTemporaryFilterAsync(tableName: string, filters: TemporaryFilters, mode: TemporaryFilterMode = 'and'): Promise<void> {
         this.navigationHistory.pushNavigateCell(tableName);
         const existingState = this.tabStates.get(tableName);
         if (existingState !== undefined) {
@@ -1511,7 +1511,7 @@ export class Tab {
     }
 
     private applyTemporaryNavigationFilter(state: TabState, columnName: string, value: string, filterColumnName: string, filterValues: ReadonlySet<string>): void {
-        const filters: SerializedFilters = {};
+        const filters: TemporaryFilters = {};
         filters[columnName] = [value];
         if (filterColumnName !== '' && filterValues.size > 0 && filterColumnName !== columnName) {
             filters[filterColumnName] = Array.from(filterValues);
@@ -1519,7 +1519,7 @@ export class Tab {
         state.editorTable.applyTemporaryFilterState(filters);
     }
 
-    private applyTemporaryFilterAndSelectFirstMatch(state: TabState, filters: SerializedFilters, mode: TemporaryFilterMode): void {
+    private applyTemporaryFilterAndSelectFirstMatch(state: TabState, filters: TemporaryFilters, mode: TemporaryFilterMode): void {
         state.editorTable.applyTemporaryFilterState(filters, mode);
         const entries = this.createTemporaryFilterEntries(filters);
         if (entries.length === 0) return;
@@ -1539,7 +1539,7 @@ export class Tab {
         }
     }
 
-    private createTemporaryFilterEntries(filters: SerializedFilters): Array<{ columnName: string; values: Set<string> }> {
+    private createTemporaryFilterEntries(filters: TemporaryFilters): Array<{ columnName: string; values: Set<string> }> {
         const entries: Array<{ columnName: string; values: Set<string> }> = [];
         for (const columnName of Object.keys(filters)) {
             const values = new Set(filters[columnName].filter(value => value !== ''));

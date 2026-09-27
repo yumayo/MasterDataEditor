@@ -1,3 +1,4 @@
+import {ToggleControl} from '../ui/toggle-control';
 import type {UiStoredBranchCompareListTab} from '../app/ui-state';
 import {gitBranchCompareAsync, gitBranchListAsync, gitShowAtCommitAsync, type GitBranchCompareFile, type GitBranchInfo} from '../app/api';
 import {Tab} from '../tabs/tab';
@@ -45,7 +46,7 @@ export class BranchComparePanel {
     private readonly filterInput: HTMLInputElement;
     private readonly filterClearButton: HTMLButtonElement;
     private readonly filterEmptyElement: HTMLElement;
-    private readonly exportFilterCheckbox: HTMLInputElement;
+    private readonly exportFilterToggle: ToggleControl;
     private readonly exportFilterSummary: HTMLElement;
     private exportFilterTimeState: ExportFilterTimeState = {kind: 'idle'};
     private readonly statusElement: HTMLElement;
@@ -213,27 +214,17 @@ export class BranchComparePanel {
         controls.appendChild(filterContainer);
 
         const exportFilterLabel = document.createElement('label');
-        exportFilterLabel.classList.add('settings-toggle', 'branch-compare-export-filter-label');
+        exportFilterLabel.classList.add('branch-compare-export-filter-label');
         exportFilterLabel.title = '出力時刻でフィルタ';
         exportFilterLabel.addEventListener('mousedown', (event: MouseEvent) => {
             if (this.suggestionsElement.classList.contains('visible')) event.preventDefault();
         });
-        this.exportFilterCheckbox = document.createElement('input');
-        this.exportFilterCheckbox.type = 'checkbox';
-        this.exportFilterCheckbox.classList.add('settings-toggle-input');
-        this.exportFilterCheckbox.setAttribute('aria-label', '出力時刻でフィルタ');
-        this.exportFilterCheckbox.checked = storedState.exportFilterEnabled === true;
-        this.exportFilterCheckbox.addEventListener('change', () => { this.refreshExportComparison(); });
-        const exportFilterTrack = document.createElement('span');
-        exportFilterTrack.classList.add('settings-toggle-track');
-        exportFilterTrack.setAttribute('aria-hidden', 'true');
-        const exportFilterThumb = document.createElement('span');
-        exportFilterThumb.classList.add('settings-toggle-thumb');
-        exportFilterTrack.appendChild(exportFilterThumb);
+        this.exportFilterToggle = new ToggleControl(exportFilterLabel, '出力時刻でフィルタ', storedState.exportFilterEnabled === true, []);
+        this.exportFilterToggle.onChange(() => { this.refreshExportComparison(); });
         const exportFilterCaption = document.createElement('span');
         exportFilterCaption.classList.add('branch-compare-export-filter-caption');
         exportFilterCaption.textContent = '出力時刻でフィルタ';
-        exportFilterLabel.append(this.exportFilterCheckbox, exportFilterTrack, exportFilterCaption);
+        exportFilterLabel.appendChild(exportFilterCaption);
         actions.prepend(exportFilterLabel);
         this.exportFilterSummary = document.createElement('div');
         this.exportFilterSummary.classList.add('branch-compare-export-filter-summary');
@@ -270,7 +261,7 @@ export class BranchComparePanel {
         window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {
             const detail = (event as CustomEvent<SettingsChangedEventDetail>).detail;
             const filterChanged = detail.changedKeys.some(key => key === 'exportBeginDateColumnName' || key === 'exportEndDateColumnName');
-            if (filterChanged && this.exportFilterCheckbox.checked) this.refreshExportComparison();
+            if (filterChanged && this.exportFilterToggle.isChecked()) this.refreshExportComparison();
         });
         this.updateCompareButton();
     }
@@ -442,7 +433,7 @@ export class BranchComparePanel {
             baseRef: this.baseInput.getAttribute('data-selected-ref'),
             targetRef: this.targetInput.getAttribute('data-selected-ref'),
             compared,
-            ...(this.exportFilterCheckbox.checked ? {exportFilterEnabled: true} : {}),
+            ...(this.exportFilterToggle.isChecked() ? {exportFilterEnabled: true} : {}),
         });
     }
 
@@ -577,7 +568,7 @@ export class BranchComparePanel {
     private updateCompareButton(): void {
         const settings = getAppliedSettings();
         const columnsConfigured = settings.exportBeginDateColumnName.trim() !== '' && settings.exportEndDateColumnName.trim() !== '';
-        this.exportFilterSummary.hidden = !this.exportFilterCheckbox.checked;
+        this.exportFilterSummary.hidden = !this.exportFilterToggle.isChecked();
         const timeState = this.exportFilterTimeState;
         if (!columnsConfigured) {
             this.exportFilterSummary.textContent = '設定画面で開始・終了日時列を設定してください';
@@ -589,7 +580,7 @@ export class BranchComparePanel {
             this.exportFilterSummary.textContent = this.compareBusy ? '比較元・比較先の出力時刻を取得中…' : '比較すると比較元・比較先それぞれの出力時刻を取得します';
         }
         this.exportFilterSummary.title = '開始日時列: ' + settings.exportBeginDateColumnName + ' / 終了日時列: ' + settings.exportEndDateColumnName;
-        this.compareButton.disabled = this.compareBusy || !this.areRefsReady() || (this.exportFilterCheckbox.checked && !columnsConfigured);
+        this.compareButton.disabled = this.compareBusy || !this.areRefsReady() || (this.exportFilterToggle.isChecked() && !columnsConfigured);
         this.swapButton.disabled = this.compareBusy;
         this.openListButton.disabled = this.compareBusy || this.listMetadata === false || this.listOpenController !== false;
     }
@@ -613,7 +604,7 @@ export class BranchComparePanel {
         this.invalidateResults(false);
         const controller = new AbortController();
         this.compareController = controller;
-        const exportFilterEnabled = this.exportFilterCheckbox.checked;
+        const exportFilterEnabled = this.exportFilterToggle.isChecked();
         const settings = getAppliedSettings();
         this.persistState(false);
         this.dismissSuggestions();
