@@ -3,18 +3,18 @@ services:
     build:
       context: .
       dockerfile: docker/dev/Dockerfile
-    working_dir: /app
+    working_dir: ${CONTAINER_WORKDIR?error}
     volumes:
-      - ./build.ts:/app/build.ts:ro
-      - ./.env:/app/.env:ro
+      - ./build.ts:${CONTAINER_WORKDIR?error}/build.ts:ro
+      - ./.env:${CONTAINER_WORKDIR?error}/.env:ro
       # C# ソースはイメージ内にCOPY済み（WPFビルドが一時ファイルを書くためマウント不可）
-      - ./WebView/src/:/app/WebView/src/:ro
-      - ./WebView/index.html:/app/WebView/index.html:ro
-      - ./WebView/index.css:/app/WebView/index.css:ro
-      - ./WebView/vite.config.ts:/app/WebView/vite.config.ts:ro
-      - ./WebView/tsconfig.json:/app/WebView/tsconfig.json:ro
-      - ./WebView/tsconfig.view-plugin-api.json:/app/WebView/tsconfig.view-plugin-api.json:ro
-      - ./dist:/app/dist
+      - ./WebView/src/:${CONTAINER_WORKDIR?error}/WebView/src/:ro
+      - ./WebView/index.html:${CONTAINER_WORKDIR?error}/WebView/index.html:ro
+      - ./WebView/index.css:${CONTAINER_WORKDIR?error}/WebView/index.css:ro
+      - ./WebView/vite.config.ts:${CONTAINER_WORKDIR?error}/WebView/vite.config.ts:ro
+      - ./WebView/tsconfig.json:${CONTAINER_WORKDIR?error}/WebView/tsconfig.json:ro
+      - ./WebView/tsconfig.view-plugin-api.json:${CONTAINER_WORKDIR?error}/WebView/tsconfig.view-plugin-api.json:ro
+      - ./dist:${CONTAINER_WORKDIR?error}/dist
     environment:
       - NODE_ENV=production
     entrypoint: ["node", "build.ts"]
@@ -23,26 +23,26 @@ services:
     build:
       context: .
       dockerfile: docker/playwright/Dockerfile
-    working_dir: /app/WebView
+    working_dir: ${CONTAINER_WORKDIR?error}/WebView
     volumes:
       # ソースコード（読み取り専用）
       # src/ 配下のCSS・TSファイルはすべて含まれる
-      - ./WebView/src/:/app/WebView/src/:ro
-      - ./WebView/index.html:/app/WebView/index.html:ro
-      - ./WebView/index.css:/app/WebView/index.css:ro
-      - ./WebView/vite.config.ts:/app/WebView/vite.config.ts:ro
-      - ./WebView/tsconfig.json:/app/WebView/tsconfig.json:ro
-      - ./WebView/tsconfig.view-plugin-api.json:/app/WebView/tsconfig.view-plugin-api.json:ro
+      - ./WebView/src/:${CONTAINER_WORKDIR?error}/WebView/src/:ro
+      - ./WebView/index.html:${CONTAINER_WORKDIR?error}/WebView/index.html:ro
+      - ./WebView/index.css:${CONTAINER_WORKDIR?error}/WebView/index.css:ro
+      - ./WebView/vite.config.ts:${CONTAINER_WORKDIR?error}/WebView/vite.config.ts:ro
+      - ./WebView/tsconfig.json:${CONTAINER_WORKDIR?error}/WebView/tsconfig.json:ro
+      - ./WebView/tsconfig.view-plugin-api.json:${CONTAINER_WORKDIR?error}/WebView/tsconfig.view-plugin-api.json:ro
       # テスト用config.json（src/config/config.jsonはgitignoreされているため）
-      - ./WebView/e2e/fixtures/config.json:/app/WebView/src/config/config.json:ro
+      - ./WebView/e2e/fixtures/config.json:${CONTAINER_WORKDIR?error}/WebView/src/config/config.json:ro
       # Playwright設定・テストファイル
-      - ./WebView/playwright.config.ts:/app/WebView/playwright.config.ts:ro
-      - ./WebView/e2e/:/app/WebView/e2e/
+      - ./WebView/playwright.config.ts:${CONTAINER_WORKDIR?error}/WebView/playwright.config.ts:ro
+      - ./WebView/e2e/:${CONTAINER_WORKDIR?error}/WebView/e2e/
       # DOM確認用にマウントします。
-      - ./.CONTEXT:/app/.CONTEXT
+      - ./.CONTEXT:${CONTAINER_WORKDIR?error}/.CONTEXT
       # .NETソース
-      - ./App.MasterDataEditor.sln:/app/App.MasterDataEditor.sln
-      - ./App.MasterDataEditor/:/app/App.MasterDataEditor/
+      - ./App.MasterDataEditor.sln:${CONTAINER_WORKDIR?error}/App.MasterDataEditor.sln
+      - ./App.MasterDataEditor/:${CONTAINER_WORKDIR?error}/App.MasterDataEditor/
     networks:
       - internal_net
     tty: true
