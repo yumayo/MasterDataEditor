@@ -1736,6 +1736,137 @@ test.describe('列フィルターの空セル除外', () => {
         await expect(toggle).toBeChecked();
     });
 
+    test('空セル除外をONからOFFに戻すと未適用になり、解除をUndo・Redoできる', async ({ page }) => {
+        await installMockApiAsync(page, createExcludeEmptyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'item');
+        const categoryHeader = table.locator('.editor-table-column-header').nth(1);
+        const rowCount = page.locator('.filter-row-count');
+        const dropdown = page.locator('.filter-dropdown.visible');
+        const toggle = dropdown.getByRole('checkbox', { name: '空セルを除外', exact: true });
+        await clickFilterIconAsync(table, 1);
+        await toggle.check();
+        await applyFilterAsync(page);
+        await expect(categoryHeader).toHaveClass(/filter-active/);
+        await expect(rowCount).toHaveText('6 / 8 行');
+        await expect.poll(async () => {
+            const settings = await readMockTableViewSettingsAsync(page, 'item');
+            return settings === null ? null : settings.filters;
+        }).toEqual({ category: { values: [' ', '0', 'armor', 'false', 'potion', 'weapon'], excludeEmpty: true } });
+
+        await clickFilterIconAsync(table, 1);
+        await toggle.uncheck();
+        await applyFilterAsync(page);
+        expect(await getVisibleColumnValuesAsync(table, 0)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+        await expect(categoryHeader).not.toHaveClass(/filter-active/);
+        await expect(rowCount).not.toBeVisible();
+        await expect.poll(async () => {
+            const settings = await readMockTableViewSettingsAsync(page, 'item');
+            return settings === null ? null : settings.filters;
+        }).toEqual({});
+        await clickFilterIconAsync(table, 1);
+        await expect(toggle).not.toBeChecked();
+        await page.keyboard.press('Escape');
+
+        await page.keyboard.press('Control+z');
+        expect(await getVisibleColumnValuesAsync(table, 0)).toEqual(['1', '3', '5', '6', '7', '8']);
+        await expect(categoryHeader).toHaveClass(/filter-active/);
+        await expect(rowCount).toHaveText('6 / 8 行');
+        await clickFilterIconAsync(table, 1);
+        await expect(toggle).toBeChecked();
+        await page.keyboard.press('Escape');
+        await expect.poll(async () => {
+            const settings = await readMockTableViewSettingsAsync(page, 'item');
+            return settings === null ? null : settings.filters;
+        }).toEqual({ category: { values: [' ', '0', 'armor', 'false', 'potion', 'weapon'], excludeEmpty: true } });
+
+        await page.keyboard.press('Control+y');
+        expect(await getVisibleColumnValuesAsync(table, 0)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+        await expect(categoryHeader).not.toHaveClass(/filter-active/);
+        await expect(rowCount).not.toBeVisible();
+        await expect.poll(async () => {
+            const settings = await readMockTableViewSettingsAsync(page, 'item');
+            return settings === null ? null : settings.filters;
+        }).toEqual({});
+        await clickFilterIconAsync(table, 1);
+        await expect(toggle).not.toBeChecked();
+        await page.keyboard.press('Escape');
+        // autoDumpには解除済みのアイコンと全行が見える状態を残す。
+    });
+
+    test('空セル除外をOFFにしても検索による値の絞り込みと他列の条件は維持する', async ({ page }) => {
+        await installMockApiAsync(page, createExcludeEmptyFileSystem());
+        await page.goto('/');
+        const table = await openTableAsync(page, 'item');
+        const categoryHeader = table.locator('.editor-table-column-header').nth(1);
+        const priceHeader = table.locator('.editor-table-column-header').nth(2);
+        const dropdown = page.locator('.filter-dropdown.visible');
+        const toggle = dropdown.getByRole('checkbox', { name: '空セルを除外', exact: true });
+        await clickFilterIconAsync(table, 1);
+        await toggle.check();
+        await applyFilterAsync(page);
+        await clickFilterIconAsync(table, 2);
+        await toggle.check();
+        await applyFilterAsync(page);
+
+        // 検索結果の全チェックは、検索で隠れた候補も含む全選択とは区別する。
+        await clickFilterIconAsync(table, 1);
+        await toggle.uncheck();
+        await dropdown.locator('.filter-search-input').fill('weapon');
+        await applyFilterAsync(page);
+        expect(await getVisibleColumnValuesAsync(table, 0)).toEqual(['1', '2']);
+        await expect(categoryHeader).toHaveClass(/filter-active/);
+        await expect(priceHeader).toHaveClass(/filter-active/);
+        await expect(page.locator('.filter-row-count')).toHaveText('2 / 8 行');
+        const expectedPriceFilter = { values: ['0', '100', '200', '300', '500'], excludeEmpty: true };
+        await expect.poll(async () => {
+            const settings = await readMockTableViewSettingsAsync(page, 'item');
+            return settings === null ? null : settings.filters;
+        }).toEqual({ category: ['weapon'], price: expectedPriceFilter });
+
+        // 当該列の残る値条件だけを解除しても、他列の空セル除外は維持する。
+        await clickFilterIconAsync(table, 1);
+        await expect(toggle).not.toBeChecked();
+        await dropdown.locator('.filter-select-all').click();
+        await applyFilterAsync(page);
+        expect(await getVisibleColumnValuesAsync(table, 0)).toEqual(['1', '2', '3', '5', '6']);
+        await expect(categoryHeader).not.toHaveClass(/filter-active/);
+        await expect(priceHeader).toHaveClass(/filter-active/);
+        await expect(page.locator('.filter-row-count')).toHaveText('5 / 8 行');
+        await expect.poll(async () => {
+            const settings = await readMockTableViewSettingsAsync(page, 'item');
+            return settings === null ? null : settings.filters;
+        }).toEqual({ price: expectedPriceFilter });
+    });
+
+    test('全セル空の列で空セル除外をONからOFFに戻すと未適用になる', async ({ page }) => {
+        const fs = createEmptyValueFilterTestFileSystem();
+        fs['data/item.csv'] = 'id,category,price\n1,,0\n2,,100';
+        await installMockApiAsync(page, fs);
+        await page.goto('/');
+        const table = await openTableAsync(page, 'item');
+        const categoryHeader = table.locator('.editor-table-column-header').nth(1);
+        const dropdown = page.locator('.filter-dropdown.visible');
+        const toggle = dropdown.getByRole('checkbox', { name: '空セルを除外', exact: true });
+        await clickFilterIconAsync(table, 1);
+        await expect(dropdown.locator('.filter-item')).toHaveCount(0);
+        await toggle.check();
+        await applyFilterAsync(page);
+        expect(await getVisibleColumnValuesAsync(table, 0)).toEqual([]);
+        await expect(categoryHeader).toHaveClass(/filter-active/);
+
+        await clickFilterIconAsync(table, 1);
+        await toggle.uncheck();
+        await applyFilterAsync(page);
+        expect(await getVisibleColumnValuesAsync(table, 0)).toEqual(['1', '2']);
+        await expect(categoryHeader).not.toHaveClass(/filter-active/);
+        await expect(page.locator('.filter-row-count')).not.toBeVisible();
+        await expect.poll(async () => {
+            const settings = await readMockTableViewSettingsAsync(page, 'item');
+            return settings === null ? null : settings.filters;
+        }).toEqual({});
+    });
+
     test('検索と全選択・全解除は空セル除外を変更せず、値の絞り込みと組み合わせられる', async ({ page }) => {
         await installMockApiAsync(page, createExcludeEmptyFileSystem());
         await page.goto('/');

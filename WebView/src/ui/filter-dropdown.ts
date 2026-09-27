@@ -330,7 +330,13 @@ export class FilterDropdown {
         const oldFilters = this.table.serializeFilters();
         const storeColumnIndex = this.table.getStoreColumnIndex(this.currentColumnIndex);
         const selectedValues = this.collectCheckedValues();
-        this.columnFilter.applyFilter(storeColumnIndex, selectedValues, this.excludeEmptyToggle.isChecked());
+        const excludeEmpty = this.excludeEmptyToggle.isChecked();
+        // 空セルを通し、検索で隠れた候補も含め全値が選択されていれば、当該列の条件を解除する。
+        if (!excludeEmpty && selectedValues.size === this.allItemElements.length) {
+            this.columnFilter.clearFilter(storeColumnIndex);
+        } else {
+            this.columnFilter.applyFilter(storeColumnIndex, selectedValues, excludeEmpty);
+        }
         this.hide();
         this.table.applyFilterDisplay();
         // フィルター変更後の状態を記録する
