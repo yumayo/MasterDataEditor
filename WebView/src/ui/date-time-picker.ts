@@ -1,3 +1,5 @@
+import {placePopupInViewport} from './popup-placement';
+
 export interface DateTimePickerOptions {
     value: string;
     inputClassNames?: string[];
@@ -134,6 +136,8 @@ export class DateTimePicker {
     private readonly ignoreOutsideClick: ((target: Node) => boolean) | null;
     private readonly outsideClickHandler: (event: MouseEvent) => void;
     private readonly escKeyHandler: (event: KeyboardEvent) => void;
+    private readonly viewportEvents = new AbortController();
+    private placementFrame = 0;
     private value: string;
     private draftParts: DateTimeParts;
     private visibleYear: number;
@@ -178,6 +182,8 @@ export class DateTimePicker {
 
         this.popover = document.createElement('div');
         this.popover.classList.add('date-time-picker-popover');
+        // DOM の親子関係を保ったまま、テーブルのクリッピングと重なり順から独立させる。
+        this.popover.popover = 'manual';
         this.popover.setAttribute('role', 'dialog');
         this.popover.setAttribute('aria-label', '日時を選択');
 
@@ -335,6 +341,15 @@ export class DateTimePicker {
         };
         document.addEventListener('keydown', this.escKeyHandler);
 
+        const signal = this.viewportEvents.signal;
+        document.addEventListener('scroll', (event: Event) => {
+            if (event.target instanceof Node && this.popover.contains(event.target)) return;
+            this.schedulePlacement();
+        }, {capture: true, signal});
+        window.addEventListener('resize', () => { this.schedulePlacement(); }, {signal});
+        // 狭い画面での内部スクロールを、祖先のグリッド用 wheel 処理へ渡さない。
+        this.popover.addEventListener('wheel', (event: WheelEvent) => { event.stopPropagation(); }, {passive: true, signal});
+
         this.renderCalendar();
         this.updateTimeInputs();
     }
@@ -396,7 +411,8 @@ export class DateTimePicker {
     }
 
     destroy(): void {
-        this.clearFinalTimeInputCloseFrame();
+        this.hide(false);
+        this.viewportEvents.abort();
         document.removeEventListener('mousedown', this.outsideClickHandler);
         document.removeEventListener('keydown', this.escKeyHandler);
         this.element.remove();
@@ -410,15 +426,36 @@ export class DateTimePicker {
         this.updateTimeInputs();
         this.renderCalendar();
         this.popover.classList.add('visible');
+        this.popover.showPopover();
+        this.positionPopover();
         this.input.setAttribute('aria-expanded', 'true');
     }
 
     private hide(notifyDismiss = true): void {
         this.clearFinalTimeInputCloseFrame();
+        window.cancelAnimationFrame(this.placementFrame);
+        this.placementFrame = 0;
         const wasVisible = this.popover.classList.contains('visible');
+        if (this.popover.matches(':popover-open')) this.popover.hidePopover();
         this.popover.classList.remove('visible');
         this.input.setAttribute('aria-expanded', 'false');
         if (wasVisible && notifyDismiss && this.onDismiss !== null) this.onDismiss();
+    }
+
+    private schedulePlacement(): void {
+        if (!this.isOpen() || this.placementFrame !== 0) return;
+        this.placementFrame = window.requestAnimationFrame(() => {
+            this.placementFrame = 0;
+            if (!this.element.isConnected || this.element.getClientRects().length === 0) {
+                this.hide();
+                return;
+            }
+            this.positionPopover();
+        });
+    }
+
+    private positionPopover(): void {
+        placePopupInViewport(this.popover, this.element.getBoundingClientRect(), {side: 'auto', maxWidth: 278, maxHeight: window.innerHeight, gap: 4});
     }
 
     private createIconButton(label: string, path: string): HTMLButtonElement {

@@ -1,4 +1,5 @@
 import type {EditorTable} from '../editor/editor-table';
+import {placePopupInViewport, type PopupSide} from './popup-placement';
 
 interface TooltipAnchor {
     element: HTMLElement;
@@ -9,7 +10,7 @@ interface TooltipAnchor {
     top: number;
     left: number;
     pointerPosition: {x: number; y: number} | false;
-    below: boolean;
+    side: PopupSide | 'auto';
 }
 
 /** セルの補足情報を、マウスで移動・選択・コピーできる共通ツールチップとして表示する。 */
@@ -91,7 +92,7 @@ export class CellTooltip {
             scrollTop: table.getScrollTop(), scrollLeft: table.getScrollLeft(),
             top: rect.top, left: rect.left,
             pointerPosition,
-            below: pointerPosition === false && window.innerHeight - rect.bottom - 14 >= Math.min(360, rect.top - 14),
+            side: pointerPosition === false ? 'auto' : 'above',
         };
         this.pendingAnchor = anchor;
         this.showTimerId = window.setTimeout(() => {
@@ -149,16 +150,11 @@ export class CellTooltip {
         if (this.activeAnchor === false) return;
         const rect = this.activeAnchor.element.getBoundingClientRect();
         const pointerPosition = this.activeAnchor.pointerPosition;
-        const top = pointerPosition === false ? rect.top : pointerPosition.y;
-        const left = pointerPosition === false ? rect.left : pointerPosition.x;
-        const availableHeight = this.activeAnchor.below ? window.innerHeight - rect.bottom - 14 : top - 14;
-        this.element.style.maxHeight = Math.max(0, Math.min(360, availableHeight)) + 'px';
         this.element.textContent = text;
         this.element.hidden = false;
         this.element.classList.add('visible');
-        const popup = this.element.getBoundingClientRect();
-        this.element.style.left = Math.max(8, Math.min(left, window.innerWidth - popup.width - 8)) + 'px';
-        this.element.style.top = (this.activeAnchor.below ? rect.bottom + 6 : top - popup.height - 6) + 'px';
+        const anchor = pointerPosition === false ? rect : {left: pointerPosition.x, top: pointerPosition.y, bottom: pointerPosition.y};
+        this.activeAnchor.side = placePopupInViewport(this.element, anchor, {side: this.activeAnchor.side, maxWidth: 440, maxHeight: 360, gap: 6});
     }
 
     private closeActive(): void {
