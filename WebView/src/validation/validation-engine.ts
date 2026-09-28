@@ -328,7 +328,9 @@ export class ValidationEngine {
 
     private resolveExportWindowColumnIndices(header: string[]): ExportWindowColumnIndices | null {
         if (this.exportValidationDateTimeMs === null) return null;
-        return resolveExportWindowColumns(header, this.exportBeginDateColumnName, this.exportEndDateColumnName);
+        const columns = resolveExportWindowColumns(header, this.exportBeginDateColumnName, this.exportEndDateColumnName);
+        // データ検証の期間判定は、従来どおり開始・終了の両列がある場合だけ適用する。
+        return columns !== null && columns.beginIndex !== -1 && columns.endIndex !== -1 ? columns : null;
     }
 
     private doExportWindowsOverlap(left: ExportRowWindow, right: ExportRowWindow): boolean {

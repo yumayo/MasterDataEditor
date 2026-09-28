@@ -1,3 +1,4 @@
+/** 存在しない・未設定の列は -1 とし、その側を無期限として扱う。 */
 export type ExportWindowColumnIndices = { beginIndex: number; endIndex: number };
 
 export type ExportRowWindow =
@@ -6,10 +7,9 @@ export type ExportRowWindow =
 
 /** 出力期間の判定は検証とリビジョン比較で共用する。両端を含み、空欄は無期限。 */
 export function resolveExportWindowColumns(header: readonly string[], beginColumnName: string, endColumnName: string): ExportWindowColumnIndices | null {
-    if (beginColumnName === '' || endColumnName === '') return null;
-    const beginIndex = header.indexOf(beginColumnName);
-    const endIndex = header.indexOf(endColumnName);
-    if (beginIndex === -1 || endIndex === -1) return null;
+    const beginIndex = beginColumnName === '' ? -1 : header.indexOf(beginColumnName);
+    const endIndex = endColumnName === '' ? -1 : header.indexOf(endColumnName);
+    if (beginIndex === -1 && endIndex === -1) return null;
     return {beginIndex, endIndex};
 }
 

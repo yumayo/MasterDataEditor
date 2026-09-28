@@ -62,6 +62,10 @@ async function installPageAsync(page: Page, time: string, targetTime: string, cu
         fs['schema/' + file.tableName + '.json'] = SCHEMA;
         fs[file.path] = commits[RIGHT][file.path] ?? commits[LEFT][file.path];
     }
+    await installRevisionComparePageAsync(page, commits, FILES, fs);
+}
+
+async function installRevisionComparePageAsync(page: Page, commits: Record<string, Record<string, string>>, files: typeof FILES, fs: Record<string, string>): Promise<void> {
     await page.addInitScript(({commits, files, left, right}) => {
         Object.assign(window, {
             __mockGitBranches: [{name: 'main', ref: 'refs/heads/main', kind: 'local'}, {name: 'feature', ref: 'refs/heads/feature', kind: 'local'}],
@@ -79,10 +83,43 @@ async function installPageAsync(page: Page, time: string, targetTime: string, cu
                 ]},
             },
         });
-    }, {commits, files: FILES, left: LEFT, right: RIGHT});
+    }, {commits, files, left: LEFT, right: RIGHT});
     await installMockApiAsync(page, fs);
     await page.goto('/');
     await page.locator('[data-panel="branchCompare"]').click();
+}
+
+async function installOneSidedPageAsync(page: Page, side: 'begin' | 'end', blankSetting: boolean): Promise<{beginColumnName: string; endColumnName: string}> {
+    const beginName = '公開.開始(日時)';
+    const endName = '公開-終了(日時)';
+    const columnNames = {beginColumnName: blankSetting && side === 'end' ? '' : beginName, endColumnName: blankSetting && side === 'begin' ? '' : endName};
+    const header = ['id', 'name', 'value', ...(blankSetting ? [beginName, endName] : [side === 'begin' ? beginName : endName])];
+    const schema = JSON.stringify({header: header.map((name, key) => ({key, name, type: key === 0 || key === 2 ? 'int' : 'string'})), primary_key: ['id']});
+    const files = [{tableName: 'active', path: 'data/active.csv', status: 'M'}, {tableName: 'outside', path: 'data/outside.csv', status: 'M'}, {tableName: 'plain', path: 'data/plain.csv', status: 'M'}];
+    const commits: Record<string, Record<string, string>> = {[LEFT]: {}, [RIGHT]: {}};
+    for (const [commit, dateTime, label] of [[LEFT, TIME, 'left'], [RIGHT, TARGET_TIME, 'right']]) {
+        const bounds = [dateTime, '', side === 'begin' ? '2028-01-01' : '2025-01-01', 'invalid'];
+        const rows = bounds.map((bound, index) => {
+            // 未設定の列には不正値を入れ、設定した側だけが判定されることを確認する。
+            const values = blankSetting ? (side === 'begin' ? [bound, 'invalid'] : ['invalid', bound]) : [bound];
+            return [String(index + 1), ['boundary', 'unlimited', 'outside', 'invalid'][index] + '-' + label, '100', ...values].join(',');
+        });
+        Object.assign(commits[commit], {
+            '.masterdataeditor/settings.json': JSON.stringify({exportValidationDateTime: dateTime}),
+            'data/active.csv': [header.join(','), ...rows].join('\n'),
+            'data/outside.csv': [header.join(','), rows[2]].join('\n'),
+            'data/plain.csv': 'id,name,value\n1,plain-' + label + ',100',
+        });
+        for (const file of files) commits[commit]['schema/' + file.tableName + '.json'] = schema;
+    }
+    const fs = createDefaultFileSystem();
+    fs['.masterdataeditor/settings.json'] = JSON.stringify({exportValidationDateTime: '', exportBeginDateColumnName: columnNames.beginColumnName, exportEndDateColumnName: columnNames.endColumnName});
+    for (const file of files) {
+        fs['schema/' + file.tableName + '.json'] = schema;
+        fs[file.path] = commits[RIGHT][file.path];
+    }
+    await installRevisionComparePageAsync(page, commits, files, fs);
+    return columnNames;
 }
 
 async function compareAsync(page: Page, filtered: boolean): Promise<void> {
@@ -105,6 +142,103 @@ test('出力期間は両端を含み、空欄は無期限、不正な期間は�
         ['invalid', '', false], ['2027-01-01', '2026-01-01', false],
     ] as const) expect(isRowActiveAtExportTime([begin, end], columns, time.ms)).toBe(active);
     expect(isRowActiveAtExportTime(['value'], resolveExportWindowColumns(['name'], 'start', 'end'), time.ms)).toBe(true);
+});
+
+for (const side of ['begin', 'end'] as const) {
+    test(`出力期間の${side === 'begin' ? '開始' : '終了'}列だけでも境界を含めて絞り込む`, () => {
+        const time = parseTemporalValue(TIME);
+        if (time.kind !== 'valid') throw new Error('テストの時刻が不正です');
+        const columnName = side === 'begin' ? 'start' : 'end';
+        const columns = resolveExportWindowColumns(['id', columnName], 'start', 'end');
+        expect(columns).not.toBeNull();
+        for (const [value, active] of [
+            [TIME, true], ['', true], ['invalid', false],
+            ['2026-09-22T11:59:59', side === 'begin'], ['2026-09-22T12:00:01', side === 'end'],
+        ] as const) expect(isRowActiveAtExportTime(['1', value], columns, time.ms)).toBe(active);
+    });
+
+    test(`出力期間の${side === 'begin' ? '終了' : '開始'}列名が未設定なら空のヘッダーを期間列として使わない`, () => {
+        const time = parseTemporalValue(TIME);
+        if (time.kind !== 'valid') throw new Error('テストの時刻が不正です');
+        const columnName = side === 'begin' ? 'start' : 'end';
+        const columns = resolveExportWindowColumns(['', columnName], side === 'begin' ? 'start' : '', side === 'end' ? 'end' : '');
+        expect(columns).not.toBeNull();
+        expect(isRowActiveAtExportTime(['invalid', TIME], columns, time.ms)).toBe(true);
+        expect(isRowActiveAtExportTime(['invalid', side === 'begin' ? '2027-01-01' : '2025-01-01'], columns, time.ms)).toBe(false);
+    });
+
+    for (const blankSetting of [false, true]) {
+        const title = `${side === 'begin' ? '開始' : '終了'}列だけの出力比較は${blankSetting ? '他方の列名が空欄' : 'CSVに他方の列がない'}場合も絞り込みを復元する`;
+        test(title, async ({page}) => {
+            const columnNames = await installOneSidedPageAsync(page, side, blankSetting);
+            await compareAsync(page, true);
+            await expect(names(page)).toHaveText(['active', 'plain']);
+            await page.locator('.branch-compare-file-name').filter({hasText: /^active$/}).click();
+            const diff = page.locator('.diff-tab:visible');
+            for (const pane of ['left', 'right']) {
+                await expect(diff.locator('.diff-pane-' + pane)).toContainText('boundary-' + pane);
+                await expect(diff.locator('.diff-pane-' + pane)).toContainText('unlimited-' + pane);
+                await expect(diff.locator('.diff-pane-' + pane)).not.toContainText('outside-' + pane);
+                await expect(diff.locator('.diff-pane-' + pane)).not.toContainText('invalid-' + pane);
+            }
+            await page.getByRole('button', {name: '一覧で表示', exact: true}).click();
+            const list = page.locator('.branch-compare-list-tab:visible');
+            const active = list.locator('.branch-compare-list-section[data-path="data/active.csv"]');
+            await expect(list.locator('.branch-compare-list-section')).toHaveCount(2);
+            await expect(active).toContainText('boundary-left');
+            await expect(active).toContainText('boundary-right');
+            await expect(active).not.toContainText('outside-');
+            await expect(active).not.toContainText('invalid-');
+            const exportFilter = {leftDateTime: TIME, rightDateTime: TARGET_TIME, ...columnNames};
+            await expect.poll(async () => {
+                const raw = await readMockFileAsync(page, 'user:ui-state.json');
+                if (typeof raw !== 'string') return null;
+                const state = JSON.parse(raw);
+                return state.tabs.open.map((tab: {diff: {exportFilter: object} | null}) => tab.diff?.exportFilter);
+            }).toEqual([exportFilter, exportFilter]);
+            await page.reload();
+            await expect(page.getByRole('checkbox', {name: '出力時刻でフィルタ', exact: true})).toBeChecked();
+            await expect(names(page)).toHaveText(['active', 'plain']);
+            await expect(list.locator('.branch-compare-list-section')).toHaveCount(2);
+            await expect(active).toContainText('boundary-left');
+            await expect(active).toContainText('boundary-right');
+            await expect(active).not.toContainText('outside-');
+            await expect(active).not.toContainText('invalid-');
+            await expect(page.locator('.tab-button')).toHaveCount(2);
+            await page.locator('.branch-compare-file-name').filter({hasText: /^active$/}).click();
+            await expect(diff.locator('.diff-pane-left')).toContainText('boundary-left');
+            await expect(diff.locator('.diff-pane-right')).toContainText('boundary-right');
+            await expect(diff).not.toContainText('outside-');
+            await expect(diff).not.toContainText('invalid-');
+            await expect(page.locator('.tab-button')).toHaveCount(2);
+            await expect(page.locator('.notification-toast-error')).toHaveCount(0);
+        });
+    }
+}
+
+test('出力期間の両列がない場合と両列名が未設定の場合は全行を対象にする', () => {
+    const time = parseTemporalValue(TIME);
+    if (time.kind !== 'valid') throw new Error('テストの時刻が不正です');
+    for (const columns of [resolveExportWindowColumns(['name'], 'start', 'end'), resolveExportWindowColumns([''], '', '')]) {
+        expect(columns).toBeNull();
+        expect(isRowActiveAtExportTime(['invalid'], columns, time.ms)).toBe(true);
+    }
+});
+
+test('出力比較で開始・終了列名を両方空欄にした場合は比較を無効にする', async ({page}) => {
+    await installPageAsync(page, TIME, TARGET_TIME, '');
+    await compareAsync(page, false);
+    await page.locator('.activity-bar-settings').click();
+    await page.locator('.settings-scope-tab[data-scope="workspace"]').click();
+    for (const selector of ['.settings-export-begin-date-column-input', '.settings-export-end-date-column-input']) {
+        await page.locator(selector).fill('');
+        await page.locator(selector).blur();
+    }
+    await page.getByRole('checkbox', {name: '出力時刻でフィルタ', exact: true}).check();
+    await expect(page.locator('.branch-compare-button')).toBeDisabled();
+    await expect(page.locator('.branch-compare-export-filter-summary')).toContainText('設定');
+    await page.getByRole('checkbox', {name: '出力時刻でフィルタ', exact: true}).uncheck();
+    await expect(page.locator('.branch-compare-button')).toBeEnabled();
 });
 
 test('比較元と比較先それぞれの出力時刻で絞り込み元CSVの履歴行を維持する', async ({page}) => {

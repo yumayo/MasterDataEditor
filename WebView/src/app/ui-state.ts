@@ -516,10 +516,10 @@ function normalizeStoredDiffTab(value: unknown): UiStoredDiffTab | null {
         if (record['exportFilter'] !== undefined) {
             const leftDateTime = normalizeLimitedString(filter?.['leftDateTime'], MAX_DIFF_LABEL_LENGTH);
             const rightDateTime = normalizeLimitedString(filter?.['rightDateTime'], MAX_DIFF_LABEL_LENGTH);
-            const beginColumnName = normalizeLimitedString(filter?.['beginColumnName'], MAX_DIFF_LABEL_LENGTH);
-            const endColumnName = normalizeLimitedString(filter?.['endColumnName'], MAX_DIFF_LABEL_LENGTH);
+            const beginColumnName = filter?.['beginColumnName'] === '' ? '' : normalizeLimitedString(filter?.['beginColumnName'], MAX_DIFF_LABEL_LENGTH);
+            const endColumnName = filter?.['endColumnName'] === '' ? '' : normalizeLimitedString(filter?.['endColumnName'], MAX_DIFF_LABEL_LENGTH);
             // 旧形式の単一時刻では左右の条件を再現できないため、その差分タブは復元しない。
-            if (leftDateTime === null || rightDateTime === null || beginColumnName === null || endColumnName === null || beginColumnName.trim() === '' || endColumnName.trim() === ''
+            if (leftDateTime === null || rightDateTime === null || beginColumnName === null || endColumnName === null || (beginColumnName.trim() === '' && endColumnName.trim() === '')
                 || parseTemporalValue(leftDateTime).kind !== 'valid' || parseTemporalValue(rightDateTime).kind !== 'valid') return null;
             exportFilter = {leftDateTime, rightDateTime, beginColumnName, endColumnName};
         }

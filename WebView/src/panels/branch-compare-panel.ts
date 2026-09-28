@@ -567,11 +567,11 @@ export class BranchComparePanel {
 
     private updateCompareButton(): void {
         const settings = getAppliedSettings();
-        const columnsConfigured = settings.exportBeginDateColumnName.trim() !== '' && settings.exportEndDateColumnName.trim() !== '';
+        const columnsConfigured = settings.exportBeginDateColumnName.trim() !== '' || settings.exportEndDateColumnName.trim() !== '';
         this.exportFilterSummary.hidden = !this.exportFilterToggle.isChecked();
         const timeState = this.exportFilterTimeState;
         if (!columnsConfigured) {
-            this.exportFilterSummary.textContent = '設定画面で開始・終了日時列を設定してください';
+            this.exportFilterSummary.textContent = '設定画面で開始日時列または終了日時列を設定してください';
         } else if (timeState.kind === 'error') {
             this.exportFilterSummary.textContent = timeState.message;
         } else if (timeState.kind === 'ready') {

@@ -202,8 +202,8 @@ function filterExportCsv(text: string, settings: BranchCompareExportFilter, time
 function buildExportFilteredDiffData(request: DiffBuildWorkerRequest, settings: BranchCompareExportFilter): DiffBuildResult {
     const leftTime = parseTemporalValue(settings.leftDateTime);
     const rightTime = parseTemporalValue(settings.rightDateTime);
-    if (leftTime.kind !== 'valid' || rightTime.kind !== 'valid' || settings.beginColumnName.trim() === '' || settings.endColumnName.trim() === '') {
-        throw new Error('比較元・比較先の出力フィルター時刻と開始・終了日時列を設定してください');
+    if (leftTime.kind !== 'valid' || rightTime.kind !== 'valid' || (settings.beginColumnName.trim() === '' && settings.endColumnName.trim() === '')) {
+        throw new Error('比較元・比較先の出力フィルター時刻と、開始日時列または終了日時列を設定してください');
     }
     const left = filterExportCsv(request.headCsv, settings, leftTime.ms);
     const right = filterExportCsv(request.currentCsv, settings, rightTime.ms);
