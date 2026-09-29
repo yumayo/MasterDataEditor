@@ -149,10 +149,17 @@ export class EditorTableGridLines {
         for (let index = startCellIndex + 1; index < boundaries.length; index++) {
             // 左固定列の内部スクロールで行番号の裏へ移動した列境界は描かない。
             if (this.frozenRightColumnCount > 0 && leftFrozenLayer && index > this.dataColumnOffset() && boundaries[index] <= this.getDetachedPrefixWidthPx()) continue;
+            let boundary = boundaries[index];
+            if (leftFrozenLayer && index === this.dataColumnOffset()) {
+                // 差分ペインの位置が小数pxでも、行番号の右罫線を固定領域の内側に収める。
+                // 四捨五入で外側へ寄せると overflow: clip により1物理pxの線が欠ける。
+                const visualRight = pixelMetrics.originLeft + boundary * pixelMetrics.cssZoom;
+                boundary = (Math.floor(visualRight * pixelMetrics.devicePixelRatio) / pixelMetrics.devicePixelRatio - pixelMetrics.originLeft) / pixelMetrics.cssZoom;
+            }
             this.appendLine(
                 fragment,
                 'editor-table-grid-line-vertical',
-                boundaries[index] - pixelMetrics.hairlineWidth,
+                boundary - pixelMetrics.hairlineWidth,
                 minTop,
                 pixelMetrics.hairlineWidth,
                 maxBottom - minTop,

@@ -112,6 +112,46 @@ async function dragDiffResizeHandleAsync(page: Page, deltaX: number): Promise<vo
 // テスト群
 // =============================================================================
 
+for (const deviceScaleFactor of [1, 1.25]) {
+    test.describe(`差分ビューの行番号境界線（DPI ${deviceScaleFactor}）`, () => {
+        test.use({viewport: {width: 1281, height: 720}, deviceScaleFactor});
+
+        test('小数位置のペインでも行番号右端の境界線が固定領域内に収まる', async ({page, diffViewPage: _diffViewPage}) => {
+            await openDiffTabAsync(page);
+
+            for (const resized of [false, true]) {
+                if (resized) await dragDiffResizeHandleAsync(page, 37);
+                await expect.poll(async () => page.evaluate(() => {
+                    return ['left', 'right'].flatMap(side => {
+                        const table = document.querySelector(`.diff-pane-${side} .editor-table`);
+                        if (table === null) throw new Error('差分テーブルが見つかりません');
+                        return [
+                            ['.editor-table-pane-top-left', '.editor-table-detached-corner-layer'],
+                            ['.editor-table-pane-bottom-left', '.editor-table-detached-row-header-layer'],
+                        ].flatMap(([paneSelector, layerSelector]) => {
+                            const pane = table.querySelector(paneSelector);
+                            const layer = table.querySelector(layerSelector);
+                            if (pane === null || layer === null) throw new Error('行番号の固定領域が見つかりません');
+                            const line = layer.querySelector('.editor-table-grid-line-vertical');
+                            if (line === null) return [`${side}: ${layerSelector}: 境界線なし`];
+                            const paneRect = pane.getBoundingClientRect();
+                            const lineRect = line.getBoundingClientRect();
+                            const dpr = window.devicePixelRatio;
+                            const width = lineRect.width * dpr;
+                            const gap = (paneRect.right - lineRect.right) * dpr;
+                            // 1物理pxの線全体が見え、右端との差も1物理px未満であること。
+                            if (Math.abs(width - 1) > 0.02 || gap < -0.02 || gap >= 1.02 || lineRect.height <= 0) {
+                                return [`${side}: ${layerSelector}: width=${width}, gap=${gap}, height=${lineRect.height}`];
+                            }
+                            return [];
+                        });
+                    });
+                })).toEqual([]);
+            }
+        });
+    });
+}
+
 test.describe('diff-tab リサイズハンドル', () => {
 
     // -------------------------------------------------------------------------
