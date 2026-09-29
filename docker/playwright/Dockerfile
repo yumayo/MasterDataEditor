@@ -1,7 +1,10 @@
 FROM node:24-bookworm
 
-RUN mkdir -p /app/WebView && chown -R node:node /app
-WORKDIR /app/WebView
+ARG CONTAINER_WORKDIR
+RUN test -n "${CONTAINER_WORKDIR}" \
+    && mkdir -p "${CONTAINER_WORKDIR}/WebView" \
+    && chown -R node:node "${CONTAINER_WORKDIR}"
+WORKDIR ${CONTAINER_WORKDIR}/WebView
 
 # package.json を先にコピーして依存をインストール（nodeユーザー）
 COPY --chown=node:node WebView/package.json ./
@@ -20,11 +23,11 @@ USER node
 RUN npx playwright install chromium
 
 # Vite dev serverが参照する環境変数を設定
-RUN echo 'MASTER_DATA_EDITOR_DEV_PORT=5173' > /app/.env
+RUN echo 'MASTER_DATA_EDITOR_DEV_PORT=5173' > "${CONTAINER_WORKDIR}/.env"
 
 # テスト用config.jsonを配置
-RUN mkdir -p /app/WebView/src/config
-COPY --chown=node:node WebView/e2e/fixtures/config.json /app/WebView/src/config/config.json
+RUN mkdir -p ./src/config
+COPY --chown=node:node WebView/e2e/fixtures/config.json ./src/config/config.json
 
 # テスト結果用のディレクトリを作成しておきます。
 RUN mkdir -p ./test-results && chown node:node ./test-results

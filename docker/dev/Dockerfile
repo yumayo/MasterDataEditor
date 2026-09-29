@@ -14,8 +14,11 @@ RUN apt-get update \
 
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 
-RUN mkdir -p /app && chown -R node:node /app
-WORKDIR /app
+ARG CONTAINER_WORKDIR
+RUN test -n "${CONTAINER_WORKDIR}" \
+    && mkdir -p "${CONTAINER_WORKDIR}" \
+    && chown -R node:node "${CONTAINER_WORKDIR}"
+WORKDIR ${CONTAINER_WORKDIR}
 
 # C# ソースをコピー（WPFビルドが一時ファイルを書くためマウントではなくCOPY）
 COPY --chown=node:node App.MasterDataEditor/ ./App.MasterDataEditor/

@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: docker/dev/Dockerfile
+      args:
+        CONTAINER_WORKDIR: ${CONTAINER_WORKDIR:?error}
     working_dir: ${CONTAINER_WORKDIR?error}
     volumes:
       - ./build.ts:${CONTAINER_WORKDIR?error}/build.ts:ro
@@ -23,6 +25,8 @@ services:
     build:
       context: .
       dockerfile: docker/playwright/Dockerfile
+      args:
+        CONTAINER_WORKDIR: ${CONTAINER_WORKDIR:?error}
     working_dir: ${CONTAINER_WORKDIR?error}/WebView
     volumes:
       # ソースコード（読み取り専用）
