@@ -60,6 +60,14 @@ public partial class App : Application
 		SetupGlobalExceptionHandlers();
 		Logger.Info("Global exception handlers set up");
 
+		// GUIの起動だけで復元し、MainWindow / WebView / MCPへ初期状態を渡す。
+		try { WorkspaceTrust.RestoreFromNativeStore(AppEnvironment.GetWorkDir()); }
+		catch (Exception error)
+		{
+			Logger.Error(error, "保存済みの作業フォルダーの信頼を読み込めませんでした。");
+			MessageBox.Show("保存済みの信頼を読み込めないため、制限モードで起動します。\n\n" + error.Message, "作業フォルダーの信頼", MessageBoxButton.OK, MessageBoxImage.Warning);
+		}
+
 		// MCPサーバーをバックグラウンドで起動（EditorApiBridgeをDI登録）
 		_mcpServerStartup = StartMcpHttpServerAsync(_editorApiBridge);
 

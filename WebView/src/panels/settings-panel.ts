@@ -444,7 +444,7 @@ export class SettingsPanel {
         this.element = document.createElement('div');
         this.element.classList.add('settings-panel');
 
-        // 信頼は現在の起動中だけ有効で、User / Workspaceの保存設定とは分離する。
+        // 信頼はネイティブ側で保存し、User / Workspaceの保存設定とは分離する。
         const trustSection = this.createSection('作業フォルダーの信頼');
         trustSection.classList.add('settings-workspace-trust');
         const trustItems = this.getSectionItemsElement(trustSection);
@@ -452,7 +452,7 @@ export class SettingsPanel {
         trustStatus.classList.add('settings-workspace-trust-status');
         trustStatus.setAttribute('role', 'status');
         this.workspaceTrustChangedHandler = () => {
-            trustStatus.textContent = isWorkspaceTrusted() ? '信頼済み（この起動中のみ）' : '制限モード';
+            trustStatus.textContent = isWorkspaceTrusted() ? '信頼済み' : '制限モード';
         };
         this.workspaceTrustChangedHandler();
         window.addEventListener(WORKSPACE_TRUST_CHANGED, this.workspaceTrustChangedHandler);
@@ -468,7 +468,7 @@ export class SettingsPanel {
         });
         const trustDescription = document.createElement('p');
         trustDescription.classList.add('settings-workspace-trust-description');
-        trustDescription.textContent = '信頼の許可・解除は確認画面で行います。信頼の設定はアプリを終了するとリセットされます。';
+        trustDescription.textContent = '信頼の許可・解除は確認画面で行います。このフォルダーの信頼は次回起動時も維持されます。';
         const trustActions = document.createElement('div');
         trustActions.classList.add('settings-workspace-trust-actions');
         trustActions.append(trustStatus, trustButton);

@@ -20,6 +20,7 @@ public partial class MainWindow : Window
 	public MainWindow()
 	{
 		InitializeComponent();
+        workspaceTrustBar.Visibility = WorkspaceTrust.IsTrusted(AppEnvironment.GetWorkDir()) ? Visibility.Collapsed : Visibility.Visible;
         WorkspaceTrust.Changed += OnWorkspaceTrustChanged;
 
 		Title = $"マスターデータ入力支援ツール";
@@ -68,8 +69,8 @@ public partial class MainWindow : Window
                     var workDir = AppEnvironment.GetWorkDir();
                     var trusted = WorkspaceTrust.IsTrusted(workDir);
                     var message = trusted
-                        ? $"この作業フォルダーの信頼を解除しますか？\n\n{workDir}\n\n実行中のプラグイン、保存フック、ターミナルを停止し、Git 操作を無効にします。View 固有の未保存状態は破棄されます。"
-                        : $"この作業フォルダーの作成者と内容を信頼しますか？\n\n{workDir}\n\nプラグイン、保存フック、ターミナル、Git が有効になります。保存フックや Git 設定は、このユーザーの権限でプログラムを実行できます。信頼はこの起動中だけ有効です。";
+                        ? $"この作業フォルダーの信頼を解除しますか？\n\n{workDir}\n\n実行中のプラグイン、保存フック、ターミナルを停止し、Git 操作を無効にします。View 固有の未保存状態は破棄されます。次回起動時も制限モードになります。"
+                        : $"この作業フォルダーの作成者と内容を信頼しますか？\n\n{workDir}\n\nプラグイン、保存フック、ターミナル、Git が有効になります。保存フックや Git 設定は、このユーザーの権限でプログラムを実行できます。このフォルダーの信頼は次回起動時も維持されます。";
                     var result = MessageBox.Show(this, message, "作業フォルダーの信頼", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
                     if (_closed || result != MessageBoxResult.Yes) return;
                     if (trusted) WorkspaceTrust.Revoke();

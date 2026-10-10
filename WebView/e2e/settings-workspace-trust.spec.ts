@@ -36,7 +36,11 @@ test('設定の信頼状態はネイティブ通知と設定タブの開き直�
     await page.goto('/');
     await page.locator('.activity-bar-settings').click();
     const status = page.locator('.settings-workspace-trust-status');
-    await expect(status).toContainText('信頼済み');
+    await expect(status).toHaveText('信頼済み');
+    await expect(page.locator('.settings-workspace-trust-description')).toContainText('次回起動時も維持');
+    await page.reload();
+    await page.locator('.activity-bar-settings').click();
+    await expect(status).toHaveText('信頼済み');
     await page.evaluate(() => (window as unknown as {__changeWorkspaceTrustForTest(value: boolean): void}).__changeWorkspaceTrustForTest(false));
     await expect(status).toContainText('制限モード');
     await page.locator('.settings-scope-tab[data-scope="user"]').click();

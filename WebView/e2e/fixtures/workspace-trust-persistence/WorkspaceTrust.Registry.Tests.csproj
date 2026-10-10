@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../../App.MasterDataEditor/Helpers/WorkspaceTrust.cs" Link="WorkspaceTrust.cs" />
+    <Compile Include="../../../../App.MasterDataEditor/Helpers/NativeWorkspaceTrustStore.cs" Link="NativeWorkspaceTrustStore.cs" />
+    <Compile Include="RegistryChecks.cs" />
+  </ItemGroup>
+</Project>

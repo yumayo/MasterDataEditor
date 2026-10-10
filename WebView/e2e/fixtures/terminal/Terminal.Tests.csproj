@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../../../App.MasterDataEditor/Helpers/WorkspaceTrust.cs" Link="WorkspaceTrust.cs" />
+    <Compile Include="../workspace-trust-persistence/NativeWorkspaceTrustStoreStub.cs" Link="NativeWorkspaceTrustStoreStub.cs" />
     <Compile Include="../../../../App.MasterDataEditor/Terminal/TerminalOutputFlow.cs" Link="TerminalOutputFlow.cs" />
     <Compile Include="../../../../App.MasterDataEditor/Terminal/TerminalHost.cs" Link="TerminalHost.cs" />
     <Compile Include="../../../../App.MasterDataEditor/Terminal/ConPtyNative.cs" Link="ConPtyNative.cs" />
