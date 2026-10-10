@@ -73,6 +73,13 @@ internal static class AppEnvironment
 		return Path.Combine(GetUserDataRootDir(), "projects", GetWorkspaceUserDataDirectoryName(GetWorkDir()));
 	}
 
+	public static string GetNativeTrustDirectory()
+	{
+		var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+		if (string.IsNullOrWhiteSpace(appData)) throw new InvalidOperationException("APPDATAを取得できないため、作業フォルダーの信頼を保存・復元できません。");
+		return Path.GetFullPath(Path.Combine(appData, "App.MasterDataEditor", "trusted-workspaces"));
+	}
+
 	public static string NormalizeUserDataRelativePath(string filename)
 	{
 		var normalized = filename.Replace('\\', '/');

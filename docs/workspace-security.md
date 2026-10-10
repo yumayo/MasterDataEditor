@@ -8,7 +8,7 @@
 
 **信頼を解除** すると View を閉じ、実行中の検証 Worker / 保存フック / ターミナルを停止します。実行待ちのフック・ターミナル開始は信頼の世代が変わるため再信頼しても実行されません。View 固有の未保存状態は破棄されるため、必要な内容は先に保存してください。テーブルに反映済みの編集と Undo 履歴は残ります。信頼前・解除後に受け付ける通常の編集保存はフックを実行しません。すでに実行中の Git コマンドやデータ編集の効果を巻き戻す機能ではありません。開始済み要求に含まれる後続の Git 処理は完了する場合があります。
 
-信頼は正規化した絶対パスごとに、Windowsユーザー専用の `HKCU\Software\App.MasterDataEditor\TrustedWorkspaces` へ保存します。別フォルダーや子フォルダーへは引き継ぎません。保存先はプロジェクトファイルや User / Workspace 設定、ファイルAPIから変更できません。読込失敗や不正な保存値は制限モードに戻して通知し、許可の保存に失敗した場合は信頼を付与しません。解除は現在の信頼を先に失効し、保存情報を削除できなかった場合は次回起動時に信頼が復元される可能性を通知します。すでに起動している別のアプリへの変更同期は行いません。旧バージョンの信頼は保存されていないため、更新後に一度信頼する必要があります。
+信頼は正規化した絶対パスごとに、`%APPDATA%\App.MasterDataEditor\trusted-workspaces\<パスのSHA256>.json` へ保存します。レコードにはバージョンと正規化した絶対パスを記録し、読み込み時に型・バージョン・パスの完全一致を検査します。信頼情報の保存・復元にレジストリは使用せず、過去のレジストリ保存値も読み込みません。別フォルダーや子フォルダーへは引き継ぎません。保存先は User / Workspace 設定とは別で、通常のファイルAPIから読み書き・削除・列挙できません。APPDATAの祖先を作業フォルダーにしても、正規化パスと親ディレクトリの実体IDで保護し、Windowsの短縮名でも迂回できないようにします。ネイティブ保存もリンクを追跡せず、検査した同じhandleでI/Oします。APPDATAを取得できない場合はエラーとし、プロジェクト内などへ代わりに保存しません。保存先はローカルドライブ上の実体を使用し、UNCやリンクへリダイレクトされたAPPDATAでは信頼を保存・復元できません。読込失敗や不正な保存値は制限モードに戻して通知し、許可の保存に失敗した場合は信頼を付与しません。解除は現在の信頼を先に失効し、保存情報を削除できなかった場合は次回起動時に信頼が復元される可能性を通知します。すでに起動している別のアプリへの変更同期は行いません。以前のメモリ内またはレジストリの信頼は移行しないため、更新後に一度信頼する必要があります。
 
 `--validate` によるヘッドレス実行は保存済みの信頼を復元せず、制限モードです。標準の検証だけを実行し、フォルダー内の検証プラグインを省略したことを標準エラーに出力します。
 
@@ -36,13 +36,14 @@ dp npx tsc --noEmit
 dp npx playwright test workspace-security.spec.ts view-plugin.spec.ts plugin-validation.spec.ts terminal.spec.ts toolbar-tab-availability.spec.ts --workers=1
 dp npx playwright test native-theme.spec.ts settings-workspace-trust.spec.ts --workers=1
 dp dotnet run --project WebView/e2e/fixtures/workspace-trust-persistence/WorkspaceTrust.Tests.csproj
-dp dotnet run --project WebView/e2e/fixtures/workspace-trust-persistence/WorkspaceTrust.Registry.Tests.csproj
+dp dotnet run --project WebView/e2e/fixtures/workspace-trust-persistence/WorkspaceTrust.Store.Tests.csproj
+dp dotnet run --project WebView/e2e/fixtures/workspace-trust-persistence/WorkspaceTrust.Files.Tests.csproj
 dp dotnet run --project WebView/e2e/fixtures/native-theme/NativeTheme.Tests.csproj
 dp dotnet run --project WebView/e2e/fixtures/workspace-security/WorkspaceSecurity.Tests.csproj
 dp dotnet run --project WebView/e2e/fixtures/terminal/Terminal.Tests.csproj
 ```
 
-Windows では、未信頼フォルダーを開いて通常保存してもフックが動かないこと、ネイティブ確認の「いいえ」/「はい」、設定からの信頼解除で起動中シェルが終了すること、信頼を許可して再起動すると信頼済みになること、解除して再起動すると制限モードになることを確認してください。Registry fixtureはWindowsで実行し、専用の一時パスの値だけを使って別プロセスでの復元、解除の永続化、不正値の拒否を検証します。Linuxでは本体ソースのコンパイルのみ確認し、実Registry I/OはSKIPします。信頼後の案内バー非表示と解除後の再表示、明暗テーマでのボタンの通常・hover・押下・Tabフォーカスも確認対象です。確認画面を10秒以上開いてもAPIタイムアウト通知が出ず、連続要求で確認画面が重ならないことを確認してください。Linux のブラウザーテストと色の入力検証では、Windows の実 WPF 描画とネイティブ確認操作は検証できません。MCP の認証と作業フォルダーの信頼は別の境界です。MCP の認証が成功しても信頼は付与されません。
+Windows では、未信頼フォルダーを開いて通常保存してもフックが動かないこと、ネイティブ確認の「いいえ」/「はい」、設定からの信頼解除で起動中シェルが終了すること、信頼を許可して再起動すると信頼済みになること、解除して再起動すると制限モードになることを確認してください。Files fixtureはWindowsで実行し、固有の一時フォルダー用レコードだけを使って別プロセスでの復元、解除の永続化、不正値の拒否を検証します。security-files fixtureは保存領域の予約名、短縮名、リンクも検証し、短縮名が生成されないボリュームではそのケースをSKIPします。LinuxではI/Oスタブで実StoreのJSON契約を確認し、実ファイルI/Oとhandle保護はSKIPします。信頼後の案内バー非表示と解除後の再表示、明暗テーマでのボタンの通常・hover・押下・Tabフォーカスも確認対象です。確認画面を10秒以上開いてもAPIタイムアウト通知が出ず、連続要求で確認画面が重ならないことを確認してください。Linux のブラウザーテストと色の入力検証では、Windows の実 WPF 描画とネイティブ確認操作は検証できません。MCP の認証と作業フォルダーの信頼は別の境界です。MCP の認証が成功しても信頼は付与されません。
 
 
 Windows の実 WebView2 では、信頼済み View に次のプローブを一時的に追加し、開始済みのターミナルがなく、native のファイル応答も届かないことを確認します。`read_file_request` は既存の無害なファイル、`write_file_request` は検証専用の一時ファイルを指定してください。検証後はプローブを取り除きます。

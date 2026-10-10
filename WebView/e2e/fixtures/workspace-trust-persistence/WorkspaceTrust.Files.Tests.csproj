@@ -9,6 +9,10 @@
   <ItemGroup>
     <Compile Include="../../../../App.MasterDataEditor/Helpers/WorkspaceTrust.cs" Link="WorkspaceTrust.cs" />
     <Compile Include="../../../../App.MasterDataEditor/Helpers/NativeWorkspaceTrustStore.cs" Link="NativeWorkspaceTrustStore.cs" />
-    <Compile Include="RegistryChecks.cs" />
+    <Compile Include="../../../../App.MasterDataEditor/Helpers/WorkspaceFileAccess.cs" Link="WorkspaceFileAccess.cs" />
+    <Compile Include="../../../../App.MasterDataEditor/Helpers/HelperFile.cs" Link="HelperFile.cs" />
+    <Compile Include="../../../../App.MasterDataEditor/AppEnvironment.cs" Link="AppEnvironment.cs" />
+    <Compile Include="../../../../App.MasterDataEditor/Helpers/GitCommandHelper.cs" Link="GitCommandHelper.cs" />
+    <Compile Include="FileChecks.cs" />
   </ItemGroup>
 </Project>

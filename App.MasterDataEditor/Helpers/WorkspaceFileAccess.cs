@@ -31,37 +31,46 @@ internal sealed class WorkspaceFileAccess : IDisposable
 		this.fullPath = fullPath;
 	}
 
-	public static string ReadAllText(string baseDirectory, string relativePath)
+	public static string ReadAllText(string baseDirectory, string relativePath) => ReadAllText(baseDirectory, relativePath, false) ?? "";
+	public static void WriteAllText(string baseDirectory, string relativePath, string contents) => WriteAllText(baseDirectory, relativePath, contents, false);
+	public static bool DeleteFile(string baseDirectory, string relativePath) => DeleteFile(baseDirectory, relativePath, false);
+
+	// 保存先を固定したネイティブ専用入口。WebViewの要求から保護を解除する引数は渡せない。
+	internal static string? ReadNativeTrustRecord(string filename) => ReadAllText(AppEnvironment.GetNativeTrustDirectory(), filename, true);
+	internal static void WriteNativeTrustRecord(string filename, string contents) => WriteAllText(AppEnvironment.GetNativeTrustDirectory(), filename, contents, true);
+	internal static bool DeleteNativeTrustRecord(string filename) => DeleteFile(AppEnvironment.GetNativeTrustDirectory(), filename, true);
+
+	private static string? ReadAllText(string baseDirectory, string relativePath, bool nativeTrust)
 	{
 		try
 		{
-			using var access = LockParent(baseDirectory, relativePath, false);
-			using var handle = OpenFile(access.fullPath, GenericRead, OpenExisting);
+			using var access = LockParent(baseDirectory, relativePath, false, nativeTrust);
+			using var handle = OpenFile(access.fullPath, GenericRead, OpenExisting, nativeTrust);
 			using var stream = new FileStream(handle, FileAccess.Read);
 			using var reader = new StreamReader(stream);
 			return reader.ReadToEnd();
 		}
-		catch (FileNotFoundException) { return ""; }
-		catch (DirectoryNotFoundException) { return ""; }
+		catch (FileNotFoundException) { return null; }
+		catch (DirectoryNotFoundException) { return null; }
 	}
 
-	public static void WriteAllText(string baseDirectory, string relativePath, string contents)
+	private static void WriteAllText(string baseDirectory, string relativePath, string contents, bool nativeTrust)
 	{
-		using var access = LockParent(baseDirectory, relativePath, true);
+		using var access = LockParent(baseDirectory, relativePath, true, nativeTrust);
 		// OPEN_ALWAYS は検査前に既存内容を切り詰めない。検査した同じ handle にだけ書く。
-		using var handle = OpenFile(access.fullPath, GenericWrite, OpenAlways);
+		using var handle = OpenFile(access.fullPath, GenericWrite, OpenAlways, nativeTrust);
 		using var stream = new FileStream(handle, FileAccess.Write);
 		stream.SetLength(0);
 		using var writer = new StreamWriter(stream);
 		writer.Write(contents);
 	}
 
-	public static bool DeleteFile(string baseDirectory, string relativePath)
+	private static bool DeleteFile(string baseDirectory, string relativePath, bool nativeTrust)
 	{
 		try
 		{
-			using var access = LockParent(baseDirectory, relativePath, false);
-			using var handle = OpenFile(access.fullPath, DeleteAccess | ReadAttributes, OpenExisting);
+			using var access = LockParent(baseDirectory, relativePath, false, nativeTrust);
+			using var handle = OpenFile(access.fullPath, DeleteAccess | ReadAttributes, OpenExisting, nativeTrust);
 			// 検査後のパスを DeleteFile に再解決させず、検査した実体を削除する。
 			var disposition = new FileDisposition { DeleteFile = true };
 			if (!SetFileInformationByHandle(handle, 4, ref disposition, (uint)Marshal.SizeOf<FileDisposition>())) throw NativeError(access.fullPath);
@@ -74,9 +83,10 @@ internal sealed class WorkspaceFileAccess : IDisposable
 	public static List<object> FindEntries(string baseDirectory, string relativePath)
 	{
 		var path = HelperFile.ResolveSafePath(baseDirectory, relativePath) ?? throw new UnauthorizedAccessException("Invalid directory or linked path");
+		RejectNativeTrustPath(path);
 		try
 		{
-			using var access = LockDirectory(path, false);
+			using var access = LockDirectory(path, false, false);
 			var entries = new DirectoryInfo(path).EnumerateFileSystemInfos().ToArray();
 			var directories = new List<object>();
 			var files = new List<object>();
@@ -94,19 +104,32 @@ internal sealed class WorkspaceFileAccess : IDisposable
 		catch (DirectoryNotFoundException) { return new List<object>(); }
 	}
 
-	public static WorkspaceFileAccess LockParent(string baseDirectory, string relativePath, bool createParents)
+	public static WorkspaceFileAccess LockParent(string baseDirectory, string relativePath, bool createParents) => LockParent(baseDirectory, relativePath, createParents, false);
+
+	private static WorkspaceFileAccess LockParent(string baseDirectory, string relativePath, bool createParents, bool nativeTrust)
 	{
 		var path = HelperFile.ResolveSafePath(baseDirectory, relativePath) ?? throw new UnauthorizedAccessException("Invalid filename or linked path");
+		if (!nativeTrust) RejectNativeTrustPath(path);
 		var parent = Path.GetDirectoryName(path) ?? throw new ArgumentException("Invalid file parent");
-		var access = LockDirectory(parent, createParents);
-		return new WorkspaceFileAccess(access.handles, path);
+		var access = LockDirectory(parent, createParents, nativeTrust);
+		try
+		{
+			// 保護ディレクトリの未作成時も、短縮名で辿った親の下に同名ファイルを作らせない。
+			if (!nativeTrust && string.Equals(Path.GetFileName(path), "trusted-workspaces", StringComparison.OrdinalIgnoreCase))
+			{
+				if (!GetFileInformationByHandle(access.handles[^1], out var parentInformation)) throw NativeError(parent);
+				if (MatchesFileIdentity(parentInformation, Path.GetDirectoryName(AppEnvironment.GetNativeTrustDirectory())!)) throw new UnauthorizedAccessException("Native workspace trust storage is reserved.");
+			}
+			return new WorkspaceFileAccess(access.handles, path);
+		}
+		catch { access.Dispose(); throw; }
 	}
 
 	public void ValidateGitFile(bool keepOpen)
 	{
 		try
 		{
-			var handle = OpenFile(fullPath, GenericRead, OpenExisting);
+			var handle = OpenFile(fullPath, GenericRead, OpenExisting, false);
 			if (keepOpen) handles.Add(handle);
 			else handle.Dispose();
 		}
@@ -119,7 +142,7 @@ internal sealed class WorkspaceFileAccess : IDisposable
 		handles.Clear();
 	}
 
-	private static WorkspaceFileAccess LockDirectory(string path, bool create)
+	private static WorkspaceFileAccess LockDirectory(string path, bool create, bool nativeTrust)
 	{
 		if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Secure workspace file access requires Windows.");
 		var root = Path.GetPathRoot(path) ?? throw new ArgumentException("Invalid path root");
@@ -152,6 +175,8 @@ internal sealed class WorkspaceFileAccess : IDisposable
 				if (handle.IsInvalid || !GetFileInformationByHandle(handle, out var information)) throw NativeError(directory);
 				if ((information.Attributes & (uint)FileAttributes.ReparsePoint) != 0 || (information.Attributes & (uint)FileAttributes.Directory) == 0)
 					throw new UnauthorizedAccessException("Linked or non-directory parent is not allowed: " + directory);
+				// 文字列が異なる8.3短縮名も、開いた各祖先の実体で保存領域への到達を拒否する。
+				if (!nativeTrust && MatchesFileIdentity(information, AppEnvironment.GetNativeTrustDirectory())) throw new UnauthorizedAccessException("Native workspace trust storage is reserved.");
 			}
 			return new WorkspaceFileAccess(opened, path);
 		}
@@ -162,18 +187,39 @@ internal sealed class WorkspaceFileAccess : IDisposable
 		}
 	}
 
-	private static SafeFileHandle OpenFile(string path, uint access, uint disposition)
+	private static SafeFileHandle OpenFile(string path, uint access, uint disposition, bool nativeTrust)
 	{
 		var handle = CreateFile(path, access, FileShare.Read, IntPtr.Zero, disposition, OpenReparsePoint | BackupSemantics, IntPtr.Zero);
 		try
 		{
 			if (handle.IsInvalid || !GetFileInformationByHandle(handle, out var information)) throw NativeError(path);
+			if (!nativeTrust && MatchesFileIdentity(information, AppEnvironment.GetNativeTrustDirectory())) throw new UnauthorizedAccessException("Native workspace trust storage is reserved.");
 			if ((information.Attributes & (uint)(FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0) throw new UnauthorizedAccessException("Linked or non-file target is not allowed: " + path);
 			// ハードリンク先を通じた作業フォルダー外への読取り・書込みも許可しない。
 			if (information.NumberOfLinks != 1) throw new UnauthorizedAccessException("Hard-linked files are not allowed: " + path);
 			return handle;
 		}
 		catch { handle.Dispose(); throw; }
+	}
+
+	private static void RejectNativeTrustPath(string path)
+	{
+		var protectedDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(AppEnvironment.GetNativeTrustDirectory()));
+		var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+		if (string.Equals(path, protectedDirectory, comparison) || path.StartsWith(protectedDirectory + Path.DirectorySeparatorChar, comparison)) throw new UnauthorizedAccessException("Native workspace trust storage is reserved.");
+	}
+
+	private static bool MatchesFileIdentity(FileInformation information, string protectedPath)
+	{
+		using var handle = CreateFile(protectedPath, ReadAttributes, FileShare.Read, IntPtr.Zero, OpenExisting, OpenReparsePoint | BackupSemantics, IntPtr.Zero);
+		if (handle.IsInvalid)
+		{
+			var error = Marshal.GetLastWin32Error();
+			if (error == 2 || error == 3) return false;
+			throw NativeError(protectedPath, error);
+		}
+		if (!GetFileInformationByHandle(handle, out var target)) throw NativeError(protectedPath);
+		return information.VolumeSerialNumber == target.VolumeSerialNumber && information.FileIndexHigh == target.FileIndexHigh && information.FileIndexLow == target.FileIndexLow;
 	}
 
 	private static Exception NativeError(string path) => NativeError(path, Marshal.GetLastWin32Error());

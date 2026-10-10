@@ -1,6 +1,6 @@
 namespace App.MasterDataEditor;
 
-// OS共通の状態遷移検証ではHKCUだけを差し替え、WorkspaceTrust本体をそのまま使用する。
+// OS共通の状態遷移検証では永続ストアだけを差し替え、WorkspaceTrust本体をそのまま使用する。
 internal static class NativeWorkspaceTrustStore
 {
     internal static readonly HashSet<string> TrustedPaths = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);

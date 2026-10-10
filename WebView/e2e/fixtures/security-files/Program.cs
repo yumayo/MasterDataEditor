@@ -7,6 +7,7 @@ var failures = new List<string>();
 try
 {
     Run("パスの各階層・最終ファイル・作業フォルダー自身のリンクを拒否", CheckLinks);
+    Run("APPDATA祖先を作業フォルダーにしても信頼保存領域のI/Oを拒否", CheckNativeTrustProtection);
     foreach (var operation in new[] { "add", "reset", "discard" })
     {
         Run($"Git {operation}: [] を含むファイル名を文字どおり扱う", () => CheckGit(operation, "filename"));
@@ -19,6 +20,7 @@ try
     }
     if (OperatingSystem.IsWindows())
     {
+        Run("Windows: 信頼保存領域の短縮名と未作成の予約名を保護", CheckWindowsNativeTrustAliases);
         Run("Windows: 正常なファイルの作成・読取り・列挙・削除", CheckWindowsFiles);
         Run("Windows: 親ディレクトリの差し替えを拒否し保持中の通常 IO は許可", CheckWindowsParentLock);
         Run("Windows: 最終ファイルのリンク差し替え競合から外部データを保護", CheckWindowsRace);
@@ -38,6 +40,32 @@ void Run(string name, Action action)
 {
     try { action(); Console.WriteLine("PASS: " + name); }
     catch (Exception error) { failures.Add("FAIL: " + name + Environment.NewLine + error); }
+}
+
+void CheckNativeTrustProtection()
+{
+    var appData = Path.Combine(sandbox, "appdata");
+    AppEnvironment.NativeTrustDirectory = Path.Combine(appData, "App.MasterDataEditor", "trusted-workspaces");
+    Directory.CreateDirectory(AppEnvironment.NativeTrustDirectory);
+    var record = Path.Combine(AppEnvironment.NativeTrustDirectory, "record.json");
+    File.WriteAllText(record, "private-record");
+    var relative = Path.GetRelativePath(appData, record);
+    var operations = new Action[]
+    {
+        () => WorkspaceFileAccess.ReadAllText(appData, relative),
+        () => WorkspaceFileAccess.WriteAllText(appData, relative, "forged-record"),
+        () => WorkspaceFileAccess.DeleteFile(appData, relative),
+        () => WorkspaceFileAccess.FindEntries(appData, Path.GetRelativePath(appData, AppEnvironment.NativeTrustDirectory)),
+        () => { using var access = WorkspaceFileAccess.LockParent(appData, relative, true); },
+    };
+    foreach (var operation in operations)
+    {
+        var rejected = false;
+        try { operation(); }
+        catch (UnauthorizedAccessException) { rejected = true; }
+        Expect(rejected, "通常のファイル操作がネイティブ信頼保存領域へ到達しました");
+        Expect(File.ReadAllText(record) == "private-record", "拒否前に信頼保存値が変更されました");
+    }
 }
 
 void CheckLinks()
@@ -122,6 +150,56 @@ void CheckGit(string operation, string pattern)
         var expectedStaged = operation == "add" ? index == 0 ? "edited" : "original" : index == 0 ? "original" : "edited";
         Expect(Git("show", ":" + names[index]) == expectedStaged, "Index modified unexpected file " + names[index]);
     }
+}
+
+void CheckWindowsNativeTrustAliases()
+{
+    var directory = AppEnvironment.NativeTrustDirectory;
+    var shortDirectory = ShortPath(directory);
+    if (!string.Equals(shortDirectory, directory, StringComparison.OrdinalIgnoreCase))
+    {
+        foreach (var operation in new Action[] { () => WorkspaceFileAccess.ReadAllText(shortDirectory, "record.json"), () => WorkspaceFileAccess.WriteAllText(shortDirectory, "record.json", "forged"), () => WorkspaceFileAccess.DeleteFile(shortDirectory, "record.json"), () => WorkspaceFileAccess.FindEntries(Path.GetDirectoryName(shortDirectory)!, Path.GetFileName(shortDirectory)) })
+            ExpectTrustRejected(operation);
+        AppEnvironment.NativeTrustDirectory = shortDirectory;
+        ExpectTrustRejected(() => WorkspaceFileAccess.WriteAllText(directory, "record.json", "forged"));
+        AppEnvironment.NativeTrustDirectory = directory;
+        Expect(File.ReadAllText(Path.Combine(directory, "record.json")) == "private-record", "短縮名から既存レコードが変更されました");
+    }
+    else Console.WriteLine("SKIP: 8.3短縮名が作成されないボリュームです");
+
+    var reservedParent = Path.Combine(sandbox, "reserved-long-parent", "App.MasterDataEditor");
+    Directory.CreateDirectory(reservedParent);
+    AppEnvironment.NativeTrustDirectory = Path.Combine(reservedParent, "trusted-workspaces");
+    var shortParent = ShortPath(reservedParent);
+    ExpectTrustRejected(() => WorkspaceFileAccess.WriteAllText(shortParent, "trusted-workspaces", "poison"));
+    Expect(!File.Exists(AppEnvironment.NativeTrustDirectory), "予約名がファイルとして作成されました");
+    ExpectTrustRejected(() => WorkspaceFileAccess.WriteAllText(shortParent, "trusted-workspaces/nested/record.json", "forged"));
+    Expect(!File.Exists(Path.Combine(AppEnvironment.NativeTrustDirectory, "nested", "record.json")), "短縮名から信頼レコードが作成されました");
+
+    var linked = Path.Combine(sandbox, "linked-native-trust");
+    Directory.CreateSymbolicLink(linked, directory);
+    AppEnvironment.NativeTrustDirectory = linked;
+    ExpectTrustRejected(() => WorkspaceFileAccess.ReadNativeTrustRecord("record.json"));
+    ExpectTrustRejected(() => WorkspaceFileAccess.WriteNativeTrustRecord("record.json", "forged"));
+    ExpectTrustRejected(() => WorkspaceFileAccess.DeleteNativeTrustRecord("record.json"));
+    AppEnvironment.NativeTrustDirectory = directory;
+    Expect(File.ReadAllText(Path.Combine(directory, "record.json")) == "private-record", "ネイティブ保存がリンクを追跡しました");
+}
+
+static void ExpectTrustRejected(Action operation)
+{
+    var rejected = false;
+    try { operation(); }
+    catch (UnauthorizedAccessException) { rejected = true; }
+    if (!rejected) throw new Exception("ネイティブ信頼保存領域への通常アクセスを許可しました");
+}
+
+static string ShortPath(string path)
+{
+    var result = new System.Text.StringBuilder(32768);
+    var length = NativeFixture.GetShortPathName(path, result, (uint)result.Capacity);
+    if (length == 0 || length >= result.Capacity) throw new Exception("短縮名の取得に失敗しました");
+    return result.ToString();
 }
 
 void CheckWindowsFiles()
@@ -249,6 +327,8 @@ namespace App.MasterDataEditor
     internal static class AppEnvironment
     {
         public static string WorkDir = "";
+        public static string NativeTrustDirectory = Path.Combine(Path.GetTempPath(), "unused-native-trust-" + Guid.NewGuid().ToString("N"));
+        public static string GetNativeTrustDirectory() => NativeTrustDirectory;
         public static string GetWorkDir() => WorkDir;
         public static string GetUserDataDir() => Path.Combine(WorkDir, "user");
         public static string NormalizeUserDataRelativePath(string name) => name;
@@ -264,6 +344,9 @@ namespace App.MasterDataEditor
 
 internal static class NativeFixture
 {
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true, EntryPoint = "GetShortPathNameW")]
+    public static extern uint GetShortPathName(string path, System.Text.StringBuilder result, uint length);
+
     [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true, EntryPoint = "CreateHardLinkW")]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     public static extern bool CreateHardLink(string name, string existing, IntPtr security);
