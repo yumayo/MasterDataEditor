@@ -1,4 +1,5 @@
 import type {ViewPluginAPI, EditorDisposable} from './master-data-editor-view-plugin';
+import type {InMemoryTableStore, TableDataChangeEvent} from '../data/in-memory-table-store';
 import type {NotificationToast} from '../ui/notification';
 import {isWorkspaceTrusted} from '../app/workspace-trust';
 import {runViewPluginSandbox} from './view-plugin-sandbox-runtime';
@@ -10,6 +11,14 @@ type RpcMethod = (...args: unknown[]) => unknown;
 export class ViewPluginFrame {
     private readonly frame: HTMLIFrameElement;
     private readonly channel: string;
+    private readonly store: InMemoryTableStore;
+    private readonly tables: Map<string, {header: string[]; rows: string[][]}>;
+    private readonly changes: Map<string, TableDataChangeEvent[]>;
+    private readonly revisions: Map<string, number>;
+    private readonly eventNames: Set<string>;
+    private synchronization: Promise<void>;
+    private initialized: boolean;
+    private schemaSignature: string;
     private readonly api: Omit<ViewPluginAPI, 'view'>;
     private readonly notification: NotificationToast;
     private readonly options: ViewPluginMountOptions;
@@ -22,8 +31,16 @@ export class ViewPluginFrame {
     private dirty: boolean;
     private disposed: boolean;
 
-    constructor(parent: HTMLElement, code: string, pluginId: string | null, api: Omit<ViewPluginAPI, 'view'>, notification: NotificationToast, options: ViewPluginMountOptions) {
+    constructor(parent: HTMLElement, code: string, pluginId: string | null, api: Omit<ViewPluginAPI, 'view'>, store: InMemoryTableStore, notification: NotificationToast, options: ViewPluginMountOptions) {
         this.api = api;
+        this.store = store;
+        this.tables = new Map();
+        this.changes = new Map();
+        this.revisions = new Map();
+        this.eventNames = new Set();
+        this.synchronization = Promise.resolve();
+        this.initialized = false;
+        this.schemaSignature = '';
         this.notification = notification;
         this.options = options;
         this.channel = crypto.randomUUID();
@@ -57,7 +74,14 @@ export class ViewPluginFrame {
         this.ready = completion.promise;
         let descriptors: ViewPluginDescriptor[] = [];
         let ready = false;
-        const timeout = window.setTimeout(() => { completion.reject(new Error('Viewプラグインの起動がタイムアウトしました')); this.dispose(); }, 15000);
+        // 登録専用frameのエラー通知はHostが担当し、表示用frameでは破棄前に元の例外を通知する。
+        const fail = (error: unknown): void => {
+            if (this.disposed) return;
+            completion.reject(error);
+            if (pluginId !== null) this.notification.showError(error);
+            this.dispose();
+        };
+        const timeout = window.setTimeout(() => fail(new Error('Viewプラグインの起動がタイムアウトしました')), 15000);
         this.messageHandler = async event => {
             if (this.disposed || !isWorkspaceTrusted() || event.source !== this.frame.contentWindow || typeof event.data !== 'object' || event.data === null) return;
             const message = event.data as Record<string, unknown>;
@@ -80,10 +104,16 @@ export class ViewPluginFrame {
                     if (!method) throw new Error('許可されていないView APIです: ' + message.method);
                     const value = await method(...message.args);
                     if (this.disposed || !isWorkspaceTrusted()) return;
-                    this.send({type: 'rpcResult', requestId, success: true, value, snapshot: this.snapshot()});
+                    await this.synchronizeDataAsync();
+                    this.send({type: 'rpcResult', requestId, success: true, value});
                 } catch (error: unknown) {
-                    this.send({type: 'rpcResult', requestId, success: false, error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : '', snapshot: this.snapshot()});
+                    try { await this.synchronizeDataAsync(); } catch (syncError: unknown) { fail(syncError); return; }
+                    this.send({type: 'rpcResult', requestId, success: false, error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : ''});
                 }
+            } else if (pluginId !== null && message.type === 'subscribe' && typeof message.name === 'string') {
+                this.eventNames.add(message.name);
+            } else if (pluginId !== null && message.type === 'unsubscribe' && typeof message.name === 'string') {
+                this.eventNames.delete(message.name);
             } else if (pluginId !== null && message.type === 'dirty' && typeof message.dirty === 'boolean') {
                 this.setDirty(message.dirty);
             } else if (pluginId !== null && message.type === 'notification' && typeof message.message === 'string') {
@@ -97,15 +127,40 @@ export class ViewPluginFrame {
         };
         window.addEventListener('message', this.messageHandler);
         this.frame.addEventListener('load', () => {
-            if (!this.disposed && isWorkspaceTrusted()) this.send({type: 'initialize', code, pluginId, snapshot: this.snapshot()});
+            if (this.disposed || !isWorkspaceTrusted()) return;
+            this.send({type: 'initialize', code, pluginId, theme: this.theme()});
+            this.initialized = true;
+            // 登録コードはデータを必要としない。表示時だけ同期API用の初期データを揃える。
+            if (pluginId === null) this.send({type: 'start'});
+            else void this.synchronizeDataAsync().then(() => this.send({type: 'start'})).catch(fail);
         }, {once: true});
         parent.appendChild(this.frame);
-        this.themeObserver = new MutationObserver(() => this.send({type: 'event', name: 'theme', event: {}, snapshot: this.snapshot()}));
+        this.themeObserver = new MutationObserver(() => this.send({type: 'theme', theme: this.theme()}));
         this.themeObserver.observe(document.body, {attributes: true, attributeFilter: ['data-theme']});
         this.subscriptions.push({dispose: () => { clearTimeout(timeout); completion.resolve([]); }});
         if (pluginId !== null) {
+            let scheduled = false;
+            this.subscriptions.push({dispose: store.subscribeDataChange(event => {
+                if (event.reason === 'stale') return; // 遅延再読込の予約では実データはまだ変化しない。
+                this.revisions.set(event.tableName, (this.revisions.get(event.tableName) ?? 0) + 1);
+                const changes = this.changes.get(event.tableName) ?? [];
+                changes.push(event);
+                this.changes.set(event.tableName, changes);
+                if (!this.initialized || scheduled) return;
+                scheduled = true;
+                queueMicrotask(() => {
+                    scheduled = false;
+                    void this.synchronizeDataAsync().catch(fail);
+                });
+            })});
+            // 開閉での表登録/削除も検出する。データ同期は購読の有無によらず必要。
             for (const name of ['onTableOpened', 'onTableClosed', 'onCellChanged', 'onTableSaved', 'onRowSelected'] as const) {
-                this.subscriptions.push(api.events[name]((event: unknown) => this.send({type: 'event', name, event, snapshot: this.snapshot()})));
+                this.subscriptions.push(api.events[name]((event: unknown) => {
+                    if (!this.initialized) return;
+                    void this.synchronizeDataAsync().then(() => {
+                        if (this.eventNames.has(name)) this.send({type: 'event', name, event});
+                    }).catch(fail);
+                }));
             }
         }
     }
@@ -140,13 +195,82 @@ export class ViewPluginFrame {
         this.setDirty(false);
     }
 
-    private snapshot(): object {
+    private theme(): Record<string, string> {
         const style = getComputedStyle(document.body);
-        return {
-            theme: Object.fromEntries([...style].filter(name => name.startsWith('--')).map(name => [name, style.getPropertyValue(name)])),
-            data: Object.fromEntries(this.api.data.getTableNames().map(name => [name, {header: this.api.data.getHeader(name) ?? [], rows: this.api.data.getRows(name) ?? []}])),
-            schema: Object.fromEntries(this.api.schema.getSchemaTableNames().map(name => [name, {columns: this.api.schema.getColumns(name), primaryKeys: this.api.schema.getPrimaryKeys(name), references: this.api.schema.getReferences(name)}])),
-        };
+        return Object.fromEntries([...style].filter(name => name.startsWith('--')).map(name => [name, style.getPropertyValue(name)]));
+    }
+
+    /** RPC応答・イベントより先に同期キャッシュを更新する。全転送を直列化し、途中の表を公開しない。 */
+    private synchronizeDataAsync(): Promise<void> {
+        this.synchronization = this.synchronization.then(async () => {
+            if (!this.initialized || this.disposed || !isWorkspaceTrusted()) return;
+            const schema = this.api.schema.getSchemaTableNames().map(name => [name, {columns: this.api.schema.getColumns(name), primaryKeys: this.api.schema.getPrimaryKeys(name), references: this.api.schema.getReferences(name)}]);
+            const signature = JSON.stringify(schema);
+            if (signature !== this.schemaSignature) {
+                this.schemaSignature = signature;
+                this.send({type: 'schema', schema});
+            }
+            let changed = true;
+            while (changed && !this.disposed && isWorkspaceTrusted()) {
+                const names = this.store.getTableNames();
+                const currentNames = new Set(names);
+                for (const name of this.tables.keys()) {
+                    if (currentNames.has(name)) continue;
+                    this.send({type: 'tableRemove', tableName: name});
+                    this.tables.delete(name);
+                }
+                for (const name of this.changes.keys()) if (!currentNames.has(name)) this.changes.delete(name);
+                for (const name of names) {
+                    const header = this.store.getHeader(name);
+                    const rows = this.store.getRows(name);
+                    if (header === false || rows === false) continue;
+                    const previous = this.tables.get(name);
+                    const changes = this.changes.get(name) ?? [];
+                    if (previous?.header === header && previous.rows === rows && changes.every(change => change.reason === 'cell' || change.reason === 'rowInserted' || change.reason === 'rowRemoved')) {
+                        this.changes.delete(name);
+                        if (changes.length > 0) this.send({type: 'dataChanges', tableName: name, changes});
+                        continue;
+                    }
+                    // API.getRowsの全行deep cloneを避け、storeから1メッセージ分だけを取り出す。
+                    // 転送中に行位置や列構造が変わった場合は、未公開のstagingを捨てて当該表をやり直す。
+                    let transferring = true;
+                    while (transferring && !this.disposed && isWorkspaceTrusted()) {
+                        const transferHeader = this.store.getHeader(name);
+                        const transferRows = this.store.getRows(name);
+                        if (transferHeader === false || transferRows === false) {
+                            this.send({type: 'tableRemove', tableName: name});
+                            this.tables.delete(name);
+                            this.changes.delete(name);
+                            break;
+                        }
+                        const revision = this.revisions.get(name) ?? 0;
+                        this.send({type: 'tableBegin', tableName: name, header: transferHeader});
+                        let stable = true;
+                        for (let offset = 0; offset < transferRows.length; offset += 2000) {
+                            if (this.disposed || !isWorkspaceTrusted()) return;
+                            this.send({type: 'tableRows', tableName: name, rows: transferRows.slice(offset, offset + 2000)});
+                            // WebViewの操作とiframe側の受信を進め、巨大表でUIスレッドを占有しない。
+                            await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+                            stable = (this.revisions.get(name) ?? 0) === revision && this.store.getRows(name) === transferRows && this.store.getHeader(name) === transferHeader;
+                            if (!stable) break;
+                        }
+                        if (!stable) continue;
+                        if (this.disposed || !isWorkspaceTrusted()) return;
+                        this.send({type: 'tableEnd', tableName: name});
+                        this.tables.set(name, {header: transferHeader, rows: transferRows});
+                        this.changes.delete(name);
+                        transferring = false;
+                    }
+                }
+                // await中の別表変更や、通知を持たないregister/unregisterも取りこぼさない。
+                const latestNames = this.store.getTableNames();
+                changed = this.changes.size > 0 || latestNames.length !== this.tables.size || latestNames.some(name => {
+                    const table = this.tables.get(name);
+                    return !table || table.header !== this.store.getHeader(name) || table.rows !== this.store.getRows(name);
+                });
+            }
+        });
+        return this.synchronization;
     }
 
     private send(message: Record<string, unknown>): void {

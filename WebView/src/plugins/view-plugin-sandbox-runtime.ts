@@ -1,9 +1,11 @@
+import type {TableDataChangeEvent} from '../data/in-memory-table-store';
 import type {ViewPluginAPI, ViewPluginRegistration, ViewPluginMountResult, ViewPluginSaveHandler, ViewPluginEditSession, EditorDisposable} from './master-data-editor-view-plugin';
 
 /** 関数全体を iframe に配置するため、この関数は外側の実行時変数を参照しない。 */
 export function runViewPluginSandbox(): void {
     type Pending = {resolve(value: unknown): void; reject(error: Error): void};
-    type Snapshot = {theme: Record<string, string>; data: Record<string, {header: string[]; rows: string[][]}>; schema: Record<string, {columns: unknown; primaryKeys: unknown; references: unknown}>};
+    type TableSnapshot = {header: string[]; rows: string[][]};
+    type SchemaSnapshot = {columns: unknown; primaryKeys: unknown; references: unknown};
     const pending = new Map<string, Pending>();
     const registrations = new Map<string, ViewPluginRegistration>();
     const handlers = new Map<string, Set<(event: unknown) => void>>();
@@ -11,10 +13,15 @@ export function runViewPluginSandbox(): void {
     const sessions = new Set<ViewPluginEditSession>();
     let channel = '';
     let initialized = false;
-    let snapshot: Snapshot = {theme: {}, data: {}, schema: {}};
+    let started = false;
+    let code = '';
+    let pluginId: string | null = null;
+    const tableData = new Map<string, TableSnapshot>();
+    const staging = new Map<string, TableSnapshot>();
+    let schemaData = new Map<string, SchemaSnapshot>();
     let dirty = false;
     let mountResult: void | ViewPluginMountResult;
-    const applyTheme = (): void => { for (const [name, value] of Object.entries(snapshot.theme)) document.documentElement.style.setProperty(name, value); };
+    const applyTheme = (theme: Record<string, string>): void => { for (const [name, value] of Object.entries(theme)) document.documentElement.style.setProperty(name, value); };
     const send = (message: Record<string, unknown>): void => parent.postMessage({...message, channel}, '*');
     const rpcAsync = (method: string, args: unknown[]): Promise<unknown> => new Promise((resolve, reject) => {
         const requestId = crypto.randomUUID();
@@ -34,18 +41,19 @@ export function runViewPluginSandbox(): void {
     const unsupportedSyncEdit = (): never => { throw new Error('隔離されたViewでは同期編集APIを使用できません。setCellValueAsync / setCellValuesAsync を使用してください。'); };
     const asyncMethods = (namespace: string, names: string[]): Record<string, (...args: unknown[]) => Promise<unknown>> => Object.fromEntries(names.map(name => [name, (...args: unknown[]) => rpcAsync(namespace + '.' + name, args)]));
     const data = {
-        getTableNames: () => Object.keys(snapshot.data),
-        getHeader: (name: string) => snapshot.data[name]?.header ?? null,
-        getRows: (name: string) => snapshot.data[name]?.rows ?? null,
-        getRowCount: (name: string) => snapshot.data[name]?.rows.length ?? null,
-        getCellValue: (name: string, row: number, column: number) => snapshot.data[name]?.rows[row]?.[column] ?? null,
+        getTableNames: () => [...tableData.keys()],
+        // 呼出側のsort/splice等で差分適用先の行位置が壊れないよう、明示取得時だけコピーする。
+        getHeader: (name: string) => tableData.get(name)?.header.slice() ?? null,
+        getRows: (name: string) => tableData.get(name)?.rows.map(row => row.slice()) ?? null,
+        getRowCount: (name: string) => tableData.get(name)?.rows.length ?? null,
+        getCellValue: (name: string, row: number, column: number) => tableData.get(name)?.rows[row]?.[column] ?? null,
         ...asyncMethods('data', ['readTableDataAsync', 'getReferenceItemsAsync', 'getReferenceDisplayTextAsync', 'getReferenceHintsAsync', 'getRelatedTablesAsync', 'getValidationErrorsAsync', 'searchCellsAsync']),
     } as ViewPluginAPI['data'];
     const schema = {
-        getSchemaTableNames: () => Object.keys(snapshot.schema),
-        getColumns: (name: string) => snapshot.schema[name]?.columns ?? null,
-        getPrimaryKeys: (name: string) => snapshot.schema[name]?.primaryKeys ?? null,
-        getReferences: (name: string) => snapshot.schema[name]?.references ?? null,
+        getSchemaTableNames: () => [...schemaData.keys()],
+        getColumns: (name: string) => schemaData.get(name)?.columns ?? null,
+        getPrimaryKeys: (name: string) => schemaData.get(name)?.primaryKeys ?? null,
+        getReferences: (name: string) => schemaData.get(name)?.references ?? null,
     } as ViewPluginAPI['schema'];
     const edit: ViewPluginAPI['edit'] = {
         setCellValue: unsupportedSyncEdit, setCellValues: unsupportedSyncEdit, insertRow: unsupportedSyncEdit, deleteRow: unsupportedSyncEdit,
@@ -57,8 +65,9 @@ export function runViewPluginSandbox(): void {
     const events = Object.fromEntries(['onTableOpened', 'onTableClosed', 'onCellChanged', 'onTableSaved', 'onRowSelected'].map(name => [name, (handler: (event: unknown) => void): EditorDisposable => {
         let listeners = handlers.get(name);
         if (!listeners) { listeners = new Set(); handlers.set(name, listeners); }
+        if (listeners.size === 0) send({type: 'subscribe', name});
         listeners.add(handler);
-        return {dispose: () => { listeners.delete(handler); }};
+        return {dispose: () => { listeners.delete(handler); if (listeners.size === 0) send({type: 'unsubscribe', name}); }};
     }])) as unknown as ViewPluginAPI['events'];
     const tables: ViewPluginAPI['tables'] = {get: name => ({
         name,
@@ -140,13 +149,19 @@ export function runViewPluginSandbox(): void {
         if (!initialized && message.type === 'initialize' && typeof message.channel === 'string') {
             initialized = true;
             channel = message.channel;
-            snapshot = message.snapshot as Snapshot;
-            applyTheme();
+            code = String(message.code);
+            pluginId = typeof message.pluginId === 'string' ? message.pluginId : null;
+            applyTheme(message.theme as Record<string, string>);
+            return;
+        }
+        if (!initialized || message.channel !== channel) return;
+        if (message.type === 'start' && !started) {
+            started = true;
             Promise.resolve().then(async () => {
-                new Function(String(message.code))();
+                new Function(code)();
                 send({type: 'registered', plugins: [...registrations.values()].map(plugin => ({id: plugin.id, title: plugin.title ?? plugin.id, description: plugin.description ?? null}))});
-                if (typeof message.pluginId === 'string') {
-                    const plugin = registrations.get(message.pluginId);
+                if (pluginId !== null) {
+                    const plugin = registrations.get(pluginId);
                     if (!plugin) throw new Error('Viewプラグインが登録されていません');
                     const root = document.createElement('div');
                     root.className = 'view-plugin-sandbox-root';
@@ -157,18 +172,36 @@ export function runViewPluginSandbox(): void {
             }).catch((error: unknown) => send({type: 'error', message: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : ''}));
             return;
         }
-        if (!initialized || message.channel !== channel) return;
-        if (message.type === 'rpcResult' && typeof message.requestId === 'string') {
+        if (message.type === 'tableBegin' && typeof message.tableName === 'string') {
+            staging.set(message.tableName, {header: message.header as string[], rows: []});
+        } else if (message.type === 'tableRows' && typeof message.tableName === 'string') {
+            const table = staging.get(message.tableName);
+            if (table) for (const row of message.rows as string[][]) table.rows.push(row);
+        } else if (message.type === 'tableEnd' && typeof message.tableName === 'string') {
+            const table = staging.get(message.tableName);
+            if (table) { tableData.set(message.tableName, table); staging.delete(message.tableName); }
+        } else if (message.type === 'tableRemove' && typeof message.tableName === 'string') {
+            staging.delete(message.tableName);
+            tableData.delete(message.tableName);
+        } else if (message.type === 'dataChanges' && typeof message.tableName === 'string') {
+            const table = tableData.get(message.tableName);
+            if (table) for (const change of message.changes as TableDataChangeEvent[]) {
+                const rowIndex = change.rowIndex as number;
+                if (change.reason === 'cell') table.rows[rowIndex][change.columnIndex as number] = change.newValue as string;
+                else if (change.reason === 'rowInserted') table.rows.splice(rowIndex, 0, change.rowValues as string[]);
+                else if (change.reason === 'rowRemoved') table.rows.splice(rowIndex, 1);
+            }
+        } else if (message.type === 'schema') {
+            schemaData = new Map(message.schema as Array<[string, SchemaSnapshot]>);
+        } else if (message.type === 'theme') {
+            applyTheme(message.theme as Record<string, string>);
+        } else if (message.type === 'rpcResult' && typeof message.requestId === 'string') {
             const request = pending.get(message.requestId);
             if (!request) return;
             pending.delete(message.requestId);
-            snapshot = message.snapshot as Snapshot;
-            applyTheme();
             if (message.success === true) request.resolve(message.value);
             else { const error = new Error(String(message.error)); if (typeof message.stack === 'string') error.stack = message.stack; request.reject(error); }
         } else if (message.type === 'event' && typeof message.name === 'string') {
-            snapshot = message.snapshot as Snapshot;
-            applyTheme();
             for (const handler of handlers.get(message.name) ?? []) handler(message.event);
         } else if (message.type === 'save') {
             saveAsync().then(success => send({type: 'saved', requestId: message.requestId, success})).catch((error: unknown) => send({type: 'error', message: String(error), stack: error instanceof Error ? error.stack : ''}));

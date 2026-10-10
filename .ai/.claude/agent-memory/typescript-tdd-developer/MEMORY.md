@@ -31,6 +31,13 @@
 
 ## Implementation Patterns
 
+### sandbox View のデータ同期
+- `main.ts` の検証準備は未表示の表も常駐させる。小さな実サンプルでの成功だけでは、全表snapshotの性能を検証できない。
+- RPC応答へ全量snapshotを付けない。初期データはstoreからchunk+yield、以後はstore変更の差分。GUI Undo/RedoはEditorAPIイベントだけでは拾えない。
+- storeのregister/unregisterは変更通知がないため名前とheader/rows identityも見る。chunk中に変更された表はstagingをやり直してから公開する。
+- sandbox同期getRows/getHeaderは明示呼出時だけ防御コピーする。利用側sort/spliceで内部キャッシュを壊すとrowIndex差分が別行へ適用される。
+- 性能テストは無関係な大表を常駐させ、読み取りAPI数に転送行数が比例しないことを検証する。重いJSON.stringifyによる計測は避ける。
+
 ### 相互参照クラスの構築
 セッターを使わず `connectXxx()` メソッドで相互参照を後から注入する。
 ```typescript

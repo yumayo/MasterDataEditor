@@ -13,6 +13,7 @@ export interface ViewPluginMount {dispose(): void; saveAsync(): Promise<boolean>
 export interface ViewPluginMountOptions {onDirtyChanged?(dirty: boolean): void;}
 
 export class ViewPluginHost {
+    private readonly store: InMemoryTableStore;
     private readonly notification: NotificationToast;
     private readonly registrations = new Map<string, {descriptor: ViewPluginDescriptor; code: string}>();
     private readonly listeners: Array<() => void> = [];
@@ -24,6 +25,7 @@ export class ViewPluginHost {
 
     constructor(editorApi: InternalEditorAPI, store: InMemoryTableStore, notification: NotificationToast) {
         this.notification = notification;
+        this.store = store;
         const editor = {data: editorApi.data, schema: editorApi.schema, edit: editorApi.edit, events: editorApi.events};
         this.api = {...editor, editor, tables: new ViewPluginTablesApiImpl(store, editorApi), notification: {show: (message, status) => notification.show(message, status)}};
         window.addEventListener(WORKSPACE_TRUST_CHANGED, () => {
@@ -47,7 +49,7 @@ export class ViewPluginHost {
             try {
                 const code = await readFileAsync('plugins/views/' + file.name);
                 if (!isWorkspaceTrusted() || generation !== this.generation) return;
-                const frame = new ViewPluginFrame(container, code, null, this.api, this.notification, {});
+                const frame = new ViewPluginFrame(container, code, null, this.api, this.store, this.notification, {});
                 this.frames.add(frame);
                 try {
                     const descriptors = await frame.waitUntilReadyAsync();
@@ -83,7 +85,7 @@ export class ViewPluginHost {
         const plugin = this.registrations.get(id);
         if (!plugin) return null;
         container.textContent = '';
-        const frame = new ViewPluginFrame(container, plugin.code, id, this.api, this.notification, options);
+        const frame = new ViewPluginFrame(container, plugin.code, id, this.api, this.store, this.notification, options);
         this.frames.add(frame);
         void frame.waitUntilReadyAsync().catch(() => { frame.dispose(); this.frames.delete(frame); });
         return {dispose: () => { frame.dispose(); this.frames.delete(frame); }, saveAsync: () => frame.saveAsync(), isDirty: () => frame.isDirty(), setDirty: value => frame.setDirty(value)};
