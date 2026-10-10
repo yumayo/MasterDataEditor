@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../../../App.MasterDataEditor/Helpers/HelperFile.cs" Link="HelperFile.cs" />
     <Compile Include="../../../../App.MasterDataEditor/Helpers/GitCommandHelper.cs" Link="GitCommandHelper.cs" />
     <Compile Include="../../../../App.MasterDataEditor/Helpers/GitCellHistory.cs" Link="GitCellHistory.cs" />
     <Compile Include="../../../../App.MasterDataEditor/WebView2Handler/Handlers/WebView2HandlerGitCellBlameRequest.cs" Link="WebView2HandlerGitCellBlameRequest.cs" />

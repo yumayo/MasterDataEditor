@@ -1,3 +1,4 @@
+import {isWorkspaceTrusted} from "./workspace-trust";
 import type {BackgroundTaskTracker} from "./background-task-tracker";
 import type {DebugConsoleEntryDetail} from "../panels/debug-console";
 import {stringifyJsonForFile} from "../core/json-format";
@@ -301,6 +302,7 @@ export function invalidateGitStatusCache(): void {
  * キャッシュにヒットすればC#への問い合わせをスキップする。
  */
 export async function gitStatusAsync(): Promise<GitStatusResult> {
+    if (!isWorkspaceTrusted()) return {staged: [], changes: []};
     const startTime = performance.now();
     if (gitStatusCache !== false) {
         if (tracker !== false) {
@@ -683,4 +685,9 @@ function safeStringify(value: unknown): string {
 function serializeWriteFileData(data: WriteFileData): string {
     if (typeof data === 'string') return data;
     return stringifyJsonForFile(data);
+}
+
+/** 信頼はネイティブ UI だけが決定する。これは現在の状態の照会のみ。 */
+export function readWorkspaceTrustAsync(): Promise<{trusted: boolean}> {
+    return postMessageAsync<{trusted: boolean}>('workspace_trust', {});
 }

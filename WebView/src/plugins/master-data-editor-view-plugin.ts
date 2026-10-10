@@ -178,11 +178,15 @@ export interface EditorSchemaReference {
 }
 
 export interface EditorEditAPI {
+    /** @deprecated 隔離 View では使用不可。setCellValueAsync を使用する。 */
     setCellValue(tableName: string, row: number, column: number, value: string): boolean;
+    /** @deprecated 隔離 View では使用不可。setCellValuesAsync を使用する。 */
     setCellValues(tableName: string, changes: Array<{ row: number; column: number; value: string }>): boolean;
     setCellValueAsync(tableName: string, row: number, column: number, value: string): Promise<boolean>;
     setCellValuesAsync(tableName: string, changes: Array<{ row: number; column: number; value: string }>): Promise<boolean>;
+    /** @deprecated 隔離 View では使用不可。行挿入の隔離 API は現在未提供。 */
     insertRow(tableName: string, rowIndex: number): boolean;
+    /** @deprecated 隔離 View では使用不可。行削除の隔離 API は現在未提供。 */
     deleteRow(tableName: string, rowIndex: number): boolean;
     openTableAsync(tableName: string): Promise<boolean>;
     saveTableAsync(tableName: string): Promise<boolean>;
@@ -212,6 +216,7 @@ export interface MasterDataEditorPluginGlobal {
     readonly apiVersion: ViewPluginAPIVersion;
     registerViewPlugin(registration: ViewPluginRegistration): void;
     registerView(registration: ViewPluginRegistration): void;
+    /** iframe 内の window.masterDataEditor.editorApi。window.editorApi は公開しない。 */
     editorApi: EditorAPI;
     api: ViewPluginAPI;
 }
@@ -283,6 +288,5 @@ declare global {
 
     interface Window {
         masterDataEditor: MasterDataEditorPluginGlobal;
-        editorApi: EditorAPI;
     }
 }

@@ -26,12 +26,13 @@ internal sealed class TerminalHost : IDisposable
     public void HandleRequest(JsonElement request)
     {
         var copy = request.Clone();
+        var trustGeneration = WorkspaceTrust.GetGeneration(AppEnvironment.GetWorkDir());
         lock (_sync)
         {
             if (_disposed) return;
             var token = _documentLifetime.Token;
             // 端末入力の受付順序は CSV 保存や Git の I/O 待ちと独立させる。
-            _requestQueue = _requestQueue.ContinueWith(_ => HandleRequestAsync(copy, token), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
+            _requestQueue = _requestQueue.ContinueWith(_ => HandleRequestAsync(copy, token, trustGeneration), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
         }
     }
 
@@ -65,7 +66,7 @@ internal sealed class TerminalHost : IDisposable
         }
     }
 
-    private async Task HandleRequestAsync(JsonElement request, CancellationToken token)
+    private async Task HandleRequestAsync(JsonElement request, CancellationToken token, long trustGeneration)
     {
         if (token.IsCancellationRequested) return;
         var requestType = request.GetProperty("type").GetString()!;
@@ -93,7 +94,7 @@ internal sealed class TerminalHost : IDisposable
                     ConPtySession terminal;
                     try
                     {
-                        terminal = ConPtySession.Start(workingDirectory, columns, rows, flow.SendAsync);
+                        terminal = WorkspaceTrust.ExecuteTrusted(AppEnvironment.GetWorkDir(), trustGeneration, () => ConPtySession.Start(workingDirectory, columns, rows, flow.SendAsync));
                     }
                     catch
                     {

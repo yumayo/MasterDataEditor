@@ -62,27 +62,11 @@ namespace App.MasterDataEditor
 
 				var workDir = AppEnvironment.GetWorkDir();
 				var baseDir = GetBaseDirectory(scope, workDir);
-				Directory.CreateDirectory(baseDir);
-				var filePath = HelperFile.ResolveSafePath(baseDir, relativeFilename);
-
-				if (filePath == null)
-				{
-					Logger.Warning($"ファイル書き込み拒否: baseDir外へのアクセス scope={scope} filename={filename} relativeFilename={relativeFilename}");
-					return new
-					{
-						type = "write_file_response",
-						requestId,
-						success = false,
-						error = "Invalid filename"
-					};
-				}
-
 				var data = GetFileContent(dataElement);
-				Directory.CreateDirectory(AppEnvironment.GetDirectoryName(filePath));
-				File.WriteAllText(filePath, data);
+				WorkspaceFileAccess.WriteAllText(baseDir, relativeFilename, data);
 				if (scope == "workspace")
 				{
-					AfterSaveHookRunner.StartIfExists(workDir, filename);
+					AfterSaveHookRunner.StartIfExists(workDir, relativeFilename);
 				}
 
 				return new

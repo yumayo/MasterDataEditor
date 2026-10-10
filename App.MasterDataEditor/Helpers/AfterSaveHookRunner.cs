@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -13,10 +14,29 @@ namespace App.MasterDataEditor
 		private const string HookFileName = "after-save.sh";
 		private const string HookScriptRelativePath = HookDirectoryName + "/" + HookFileName;
 		private static readonly SemaphoreSlim HookExecutionLock = new(1, 1);
+        private static readonly object ProcessSync = new();
+        private static readonly HashSet<Process> Processes = new();
+
+        static AfterSaveHookRunner()
+        {
+            WorkspaceTrust.Changed += () =>
+            {
+                lock (ProcessSync)
+                {
+                    foreach (var process in Processes)
+                    {
+                        try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+                        catch (InvalidOperationException) { }
+                        catch (System.ComponentModel.Win32Exception ex) { Logger.Warning("保存フックの停止に失敗しました: " + ex.Message); }
+                    }
+                }
+            };
+        }
 
 		public static void StartIfExists(string workDir, string filename)
 		{
-			if (IsHookFile(filename))
+			var generation = WorkspaceTrust.GetGeneration(workDir);
+			if (generation == 0 || IsHookFile(filename))
 			{
 				return;
 			}
@@ -33,7 +53,7 @@ namespace App.MasterDataEditor
 				HookExecutionLock.Wait();
 				try
 				{
-					RunHook(workDir, hookPath, filename);
+					if (WorkspaceTrust.GetGeneration(workDir) == generation) RunHook(workDir, hookPath, filename, generation);
 				}
 				catch (Exception ex)
 				{
@@ -46,7 +66,7 @@ namespace App.MasterDataEditor
 			});
 		}
 
-		private static void RunHook(string workDir, string hookPath, string filename)
+		private static void RunHook(string workDir, string hookPath, string filename, long generation)
 		{
 			Logger.Info($"after-save hook を開始: {filename}");
 
@@ -66,7 +86,12 @@ namespace App.MasterDataEditor
 			startInfo.ArgumentList.Add(HookScriptRelativePath);
 			startInfo.ArgumentList.Add(filename.Replace('\\', '/'));
 
-			using var process = Process.Start(startInfo);
+			using var process = WorkspaceTrust.ExecuteTrusted(workDir, generation, () =>
+            {
+                var started = Process.Start(startInfo);
+                if (started != null) lock (ProcessSync) Processes.Add(started);
+                return started;
+            });
 			if (process == null)
 			{
 				throw new InvalidOperationException("after-save hook プロセスの起動に失敗しました。");
@@ -74,7 +99,8 @@ namespace App.MasterDataEditor
 
 			var standardOutputTask = process.StandardOutput.ReadToEndAsync();
 			var standardErrorTask = process.StandardError.ReadToEndAsync();
-			process.WaitForExit();
+			try { process.WaitForExit(); }
+            finally { lock (ProcessSync) Processes.Remove(process); }
 			Task.WaitAll(standardOutputTask, standardErrorTask);
 			var standardOutput = standardOutputTask.Result.Trim();
 			var standardError = standardErrorTask.Result.Trim();

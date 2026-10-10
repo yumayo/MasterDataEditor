@@ -51,10 +51,10 @@ namespace App.MasterDataEditor
 		/// パストラバーサル防止・data/ディレクトリ内の.csvファイル制限を一元的にチェックする
 		/// 不正なパスの場合はエラーメッセージを返し、正常なら null を返す
 		/// </summary>
-		public static string? ValidateDataPath(string path, string dataPrefix)
+		public static string? ValidateDataPath(string? path, string dataPrefix)
 		{
 			if (string.IsNullOrEmpty(path)) return "path is empty";
-			if (path.Contains("..") || Path.IsPathRooted(path)) return "invalid path";
+			if (!HelperFile.IsValidFilename(path)) return "invalid path";
 			if (!path.StartsWith(dataPrefix, StringComparison.Ordinal) || !path.EndsWith(".csv", StringComparison.Ordinal)) return "path must be " + dataPrefix + "*.csv";
 			return null;
 		}
@@ -195,6 +195,18 @@ namespace App.MasterDataEditor
 			}
 
 			return output;
+		}
+
+		/// <summary>
+		/// 選択した一件だけを操作する。ArgumentList と -- では pathspec の []・* 解釈は止まらない。
+		/// 明示的な :(literal) を使う履歴検索等には適用せず、変更操作の呼出し元が選択する。
+		/// </summary>
+		public static string RunGitLiteralPathCommand(string workDir, params string[] arguments)
+		{
+			var literalArguments = new string[arguments.Length + 1];
+			literalArguments[0] = "--literal-pathspecs";
+			Array.Copy(arguments, 0, literalArguments, 1, arguments.Length);
+			return RunGitCommand(workDir, literalArguments);
 		}
 
 		private static string GetWorkDirRelativePrefix(string gitRoot, string workDir, string directory)

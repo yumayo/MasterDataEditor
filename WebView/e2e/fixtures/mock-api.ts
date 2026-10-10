@@ -54,10 +54,13 @@ export function createDefaultFileSystem(): MockFileSystem {
 export async function installMockApiAsync(
     page: Page,
     fileSystem: MockFileSystem,
+    workspaceTrusted?: boolean,
+    workspaceTrustResponseDelayMs?: number,
 ): Promise<void> {
     const mockFsInstanceId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     await page.addInitScript(
-        ({ fs, instanceId }: { fs: MockFileSystem; instanceId: string }) => {
+        ({ fs, instanceId, trusted, trustResponseDelayMs }: { fs: MockFileSystem; instanceId: string; trusted: boolean; trustResponseDelayMs: number }) => {
+            if (window !== window.top) return;
             type Handler = (event: MessageEvent) => void;
             type AfterWriteHook = (filename: string, data: string) => void;
             type MockApiWindow = {
@@ -110,6 +113,11 @@ export async function installMockApiAsync(
             }
 
             const listeners: Handler[] = [];
+            let workspaceTrust = trusted;
+            (window as unknown as {__changeWorkspaceTrustForTest(value: boolean): void}).__changeWorkspaceTrustForTest = value => {
+                workspaceTrust = value;
+                dispatch({type: 'workspace_trust_changed', trusted: value});
+            };
 
             /**
              * ディレクトリ内のファイル一覧を返す
@@ -191,6 +199,12 @@ export async function installMockApiAsync(
                 });
                 // リクエストIDをレスポンスにエコーバックする（並列リクエストの照合用）
                 const requestId = request.requestId as string | undefined;
+
+                if (type === 'workspace_trust_request') {
+                    const response = {type: 'workspace_trust_response', requestId, success: true, data: {trusted: workspaceTrust}};
+                    window.setTimeout(() => dispatch(response), trustResponseDelayMs);
+                    return;
+                }
 
                 // ターミナル専用fixtureが提供するハンドラーへ配信する。
                 if (type.startsWith('terminal_') && '__mockTerminalHandle' in window) {
@@ -571,7 +585,7 @@ export async function installMockApiAsync(
                 },
             };
         },
-        { fs: fileSystem, instanceId: mockFsInstanceId },
+        { fs: fileSystem, instanceId: mockFsInstanceId, trusted: workspaceTrusted !== false, trustResponseDelayMs: workspaceTrustResponseDelayMs ?? 0 },
     );
 }
 

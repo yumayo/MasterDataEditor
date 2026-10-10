@@ -1,3 +1,4 @@
+import {isWorkspaceTrusted, WORKSPACE_TRUST_CHANGED} from "../app/workspace-trust";
 import {InMemoryTableStore} from "../data/in-memory-table-store";
 import {findFilesAsync, readFileAsync} from "../app/api";
 import {isGlobalValidationTargetTable} from "./validation-table-scope";
@@ -122,6 +123,10 @@ export class PluginValidationRunner {
             tableData: {} as PluginTableDataDebugSnapshot,
         };
 
+        if (!isWorkspaceTrusted()) {
+            return {errors: [], debug: {request, response: {type: 'validate_plugin_response', requestId, success: true, data: {errors: [], skipped: true, reason: 'workspace is not trusted'}}}};
+        }
+
         // plugins/ ディレクトリのファイル一覧を取得する（存在しなければ空配列を返す）
         let files: PluginFileEntry[];
         try {
@@ -190,6 +195,7 @@ export class PluginValidationRunner {
         }
         request.tableData = this.createTableDataDebugSnapshot(tableData);
 
+        if (!isWorkspaceTrusted()) return {errors: [], debug: {request, response: {success: true, skipped: true, reason: 'workspace trust revoked'}}};
         const workerErrors = await this.executeInWorkerAsync(plugins, tableData);
         const errors = [...readErrors, ...workerErrors];
         const response = {
@@ -228,9 +234,18 @@ export class PluginValidationRunner {
     ): Promise<PluginValidationError[]> {
         return new Promise((resolve) => {
             const worker = new SandboxWorker();
+            const onTrustChanged = (): void => {
+                if (isWorkspaceTrusted()) return;
+                clearTimeout(timeoutId);
+                worker.terminate();
+                window.removeEventListener(WORKSPACE_TRUST_CHANGED, onTrustChanged);
+                resolve([]);
+            };
+            window.addEventListener(WORKSPACE_TRUST_CHANGED, onTrustChanged);
 
             const timeoutId = setTimeout(() => {
                 worker.terminate();
+                window.removeEventListener(WORKSPACE_TRUST_CHANGED, onTrustChanged);
                 resolve([{
                     pluginName: '(system)',
                     message: 'プラグインの実行がタイムアウトしました（' + (WORKER_TIMEOUT_MS / 1000) + '秒）',
@@ -243,12 +258,14 @@ export class PluginValidationRunner {
             worker.onmessage = (e: MessageEvent<{ errors: PluginValidationError[] }>) => {
                 clearTimeout(timeoutId);
                 worker.terminate();
+                window.removeEventListener(WORKSPACE_TRUST_CHANGED, onTrustChanged);
                 resolve(e.data.errors);
             };
 
             worker.onerror = (e: ErrorEvent) => {
                 clearTimeout(timeoutId);
                 worker.terminate();
+                window.removeEventListener(WORKSPACE_TRUST_CHANGED, onTrustChanged);
                 resolve([{
                     pluginName: '(system)',
                     message: 'Worker エラー: ' + String(e.message),

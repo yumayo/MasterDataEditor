@@ -1,60 +1,97 @@
 using App.MasterDataEditor.Mcp.Tools;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace App.MasterDataEditor.Mcp;
 
 /// <summary>
-/// WPFアプリケーション内でMCPサーバーをHTTPトランスポートでホストする。
-/// バックグラウンドでKestrelを起動し、MCPクライアントからのHTTPリクエストを受け付ける。
-/// stdioプロキシ（McpStdioProxy）からの転送先として機能する。
+/// MCP の HTTP メッセージを Windows 同一ユーザー専用の名前付きパイプで受け付ける。
+/// TCP ポートは公開せず、stdio プロキシからのローカル接続だけに利用する。
 /// </summary>
+[SupportedOSPlatform("windows")]
 public sealed class McpHttpServer : IAsyncDisposable
 {
-	private readonly WebApplication _app;
+    private readonly WebApplication _app;
+    private readonly Mutex _instance;
 
-	private McpHttpServer(WebApplication app)
-	{
-		_app = app;
-	}
+    private McpHttpServer(WebApplication app, Mutex instance)
+    {
+        _app = app;
+        _instance = instance;
+    }
 
-	/// <summary>
-	/// MCPサーバーを構築し、HTTP Streamable HTTPトランスポートで起動する。
-	/// </summary>
-	/// <param name="editorApiBridge">WebView2との非同期通信ブリッジ（MCPツールがEditorAPIを呼び出すために使用）</param>
-	/// <param name="cancellationToken">キャンセルトークン</param>
-	public static async Task<McpHttpServer> CreateAndStartAsync(EditorApiBridge editorApiBridge, CancellationToken cancellationToken)
-	{
-		var builder = WebApplication.CreateBuilder();
+    public static async Task<McpHttpServer> CreateAndStartAsync(EditorApiBridge editorApiBridge, CancellationToken cancellationToken)
+    {
+        var pipeName = McpPipeTransport.GetPipeName();
+        // 名前付きパイプは複数プロセスが同名で待受可能なので、MCP の転送先が混在しないよう一つに限定する。
+        // 所有権を取得しないため、非同期の起動/終了によるスレッド切り替えに依存しない。
+        var instance = new Mutex(false, @"Global\" + pipeName + ".owner", out var createdNew);
+        if (!createdNew)
+        {
+            instance.Dispose();
+            throw new InvalidOperationException("このユーザーの MCP サーバーは既に起動しています。");
+        }
+        try
+        {
+            var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = Array.Empty<string>(), ContentRootPath = AppContext.BaseDirectory });
+            // 環境変数や appsettings によって TCP 待受が追加される余地をなくす。
+            builder.Configuration.Sources.Clear();
+            builder.WebHost.UseNamedPipes(options => options.CurrentUserOnly = true);
+            builder.WebHost.ConfigureKestrel(options => options.ListenNamedPipe(pipeName));
+            builder.Services.AddSingleton(editorApiBridge);
+            builder.Services.AddMcpServer()
+                .WithHttpTransport()
+                .WithTools<HelloWorldTool>()
+                .WithTools<TableInfoTool>()
+                .WithTools<TableEditTool>()
+                .WithTools<ValidationTool>()
+                .WithTools<SearchTool>();
 
-		// EditorApiBridgeをDIコンテナに登録（MCPツールがコンストラクタインジェクションで受け取る）
-		builder.Services.AddSingleton(editorApiBridge);
+            var app = builder.Build();
+            try
+            {
+                app.Use(McpRequestPolicy.InvokeAsync);
+                app.MapGet("/health", () => Microsoft.AspNetCore.Http.Results.NoContent());
+                app.MapMcp();
+                await app.StartAsync(cancellationToken);
+                Logger.Info("MCP Server started on a current-user named pipe");
+                return new McpHttpServer(app, instance);
+            }
+            catch
+            {
+                await app.DisposeAsync();
+                throw;
+            }
+        }
+        catch
+        {
+            instance.Dispose();
+            throw;
+        }
+    }
 
-		builder.Services.AddMcpServer()
-			.WithHttpTransport()
-			.WithTools<HelloWorldTool>()
-			.WithTools<TableInfoTool>()
-			.WithTools<TableEditTool>()
-			.WithTools<ValidationTool>()
-			.WithTools<SearchTool>();
-
-		var app = builder.Build();
-		app.Urls.Add("http://localhost:3001");
-		app.MapMcp();
-
-		await app.StartAsync(cancellationToken);
-		Logger.Info("MCP HTTP Server started on http://localhost:3001");
-
-		return new McpHttpServer(app);
-	}
-
-	public async ValueTask DisposeAsync()
-	{
-		await _app.StopAsync();
-		await _app.DisposeAsync();
-		Logger.Info("MCP HTTP Server stopped");
-	}
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await _app.StopAsync();
+        }
+        finally
+        {
+            try
+            {
+                await _app.DisposeAsync();
+            }
+            finally
+            {
+                _instance.Dispose();
+            }
+        }
+        Logger.Info("MCP Server stopped");
+    }
 }

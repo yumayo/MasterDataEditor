@@ -5,6 +5,19 @@ using System.Text.Json;
 using System.Threading.Channels;
 using App.MasterDataEditor.Terminal;
 
+App.MasterDataEditor.WorkspaceTrust.Revoke();
+if (App.MasterDataEditor.WorkspaceTrust.IsTrusted(App.MasterDataEditor.AppEnvironment.GetWorkDir())) throw new Exception("初期状態で作業フォルダーが信頼されています");
+App.MasterDataEditor.WorkspaceTrust.GrantFromNativeUi(App.MasterDataEditor.AppEnvironment.GetWorkDir());
+var generation = App.MasterDataEditor.WorkspaceTrust.GetGeneration(App.MasterDataEditor.AppEnvironment.GetWorkDir());
+App.MasterDataEditor.WorkspaceTrust.Revoke();
+try
+{
+    App.MasterDataEditor.WorkspaceTrust.ExecuteTrusted(App.MasterDataEditor.AppEnvironment.GetWorkDir(), generation, () => true);
+    throw new Exception("信頼解除後に待機中の操作を実行できました");
+}
+catch (UnauthorizedAccessException) { }
+App.MasterDataEditor.WorkspaceTrust.GrantFromNativeUi(App.MasterDataEditor.AppEnvironment.GetWorkDir());
+Console.WriteLine("PASS: 作業フォルダー信頼は既定拒否・解除で旧世代の操作を拒否");
 await TerminalOutputFlowChecks.RunAsync();
 await TerminalHostChecks.RunAsync();
 

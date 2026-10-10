@@ -7,7 +7,9 @@ Viewプラグインは `plugins/views/*.js` に配置する JavaScript ファイ
 
 ## ランタイムAPI
 
-Viewプラグインは `window.masterDataEditor.registerViewPlugin` で登録します。
+毎回のアプリ起動後、WPF ウィンドウ上部のネイティブボタンで作業フォルダーを明示的に信頼した場合のみ View プラグインを読み込みます。未信頼でも通常のデータ編集・保存は可能です。詳細は [作業フォルダーの信頼](workspace-security.md) を参照してください。
+
+Viewプラグインは `window.masterDataEditor.registerViewPlugin` で登録します。専用の opaque-origin iframe 内で実行され、`document` / `container` はその iframe に属します。親ウィンドウの DOM・ネイティブ API・ストレージにはアクセスできません。外部通信、子 iframe、フォーム、外部スクリプトも禁止されます。コードは登録の検出時と View の作成時に別々に実行されるため、トップレベルは登録だけにし、データ操作は `render` 内に置いてください。
 
 ```js
 window.masterDataEditor.registerViewPlugin({
@@ -27,7 +29,7 @@ window.masterDataEditor.registerViewPlugin({
 ホストはバージョン1と2の両方を受け付けるため、既存プラグインをすぐに変更する必要はありません。
 
 `api` はViewプラグイン専用の公開APIです。
-`data`、`schema`、`edit`、`events` は `window.editorApi` に対応しますが、イベント発火などのホスト専用操作は公開しません。
+`data`、`schema`、`edit`、`events` は `api` または `api.editor` から使用します。iframe に `window.editorApi` は公開しません。v1 を含めイベント発火などのホスト専用操作は公開しません。同期のデータ・スキーマ読み取りは直近のスナップショットです。最新データは `readTableDataAsync` または `tables.get(...).readRecordsAsync` で取得してください。
 
 - `api.data`: テーブルデータ、参照ヒント、バリデーションエラー、検索結果の読み取り
 - `api.schema`: スキーマの列、主キー、参照定義の読み取り
@@ -38,7 +40,7 @@ window.masterDataEditor.registerViewPlugin({
 - `api.notification.show(message, status?)`: トースト通知の表示。`status` は `'success'` または `'error'`（省略時は `'error'`）
 
 View上のUIから編集する場合は、タブを切り替えずに更新できる `api.edit.setCellValueAsync()` / `api.edit.setCellValuesAsync()` を使ってください。
-既存の `api.edit.setCellValue()` / `api.edit.setCellValues()` は、開いているテーブルを通常のエディター操作として更新し、そのテーブルをアクティブ化します。
+同期の `api.edit.setCellValue()` / `setCellValues()` / `insertRow()` / `deleteRow()` は隔離 View では使用できず、明示的なエラーになります。セル更新は非同期 API または編集セッションへ移行してください。行の挿入・削除の隔離 API は現在提供していません。
 
 参照列の候補リストは `api.data.getReferenceItemsAsync(tableName, columnName, sourceValue)` で取得できます。
 動的参照（二段リスト）の列では、`sourceValue` に1段目の値を渡すと二段目の参照先テーブルを解決し、`{ tableName, columnName, displayColumnName, items }` を返します。

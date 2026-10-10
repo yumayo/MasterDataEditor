@@ -24,7 +24,16 @@ namespace App.MasterDataEditor
 					return new { type = "git_discard_response", requestId, success = false, error = validationError };
 				}
 
-				GitCommandHelper.RunGitCommand(gitRoot, "checkout", "--", path);
+				// checkout は最終ファイルを置換するため、親だけを固定する。
+				// 復元元の index がリンクなら復元自体を拒否し、リンクを新しく持ち込まない。
+				var indexEntries = GitCommandHelper.RunGitLiteralPathCommand(gitRoot, "ls-files", "--stage", "-z", "--", path!).Split('\0', StringSplitOptions.RemoveEmptyEntries);
+				if (indexEntries.Length != 1 || (!indexEntries[0].StartsWith("100644 ", StringComparison.Ordinal) && !indexEntries[0].StartsWith("100755 ", StringComparison.Ordinal)))
+				{
+					return new { type = "git_discard_response", requestId, success = false, error = "Only a regular staged file can be restored" };
+				}
+				using var access = WorkspaceFileAccess.LockParent(gitRoot, path!, true);
+				access.ValidateGitFile(false);
+				GitCommandHelper.RunGitLiteralPathCommand(gitRoot, "checkout", "--", path!);
 
 				return new
 				{

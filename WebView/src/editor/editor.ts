@@ -237,14 +237,10 @@ export class Editor {
 
     /**
      * 表示中の左右スロットの内容を入れ替える（ペインスタックナビゲーション用）
-     * 既存の子要素を全て取り除いてから新しい要素を追加する
+     * 通常の左ペインは iframe の状態保持のため接続を維持し、表示だけを切り替える
      */
     setVisiblePanes(leftElement: HTMLElement, rightElement: HTMLElement): void {
-        // 左スロットの全子要素を取り除いてから新しい左ペインを追加する
-        while (this.leftSlot.firstChild) {
-            this.leftSlot.removeChild(this.leftSlot.firstChild);
-        }
-        this.leftSlot.appendChild(leftElement);
+        this.replaceVisibleLeftPane(leftElement);
         this.reattachActiveScrollbarMarkerTrack();
 
         // 右スロットの全子要素を取り除いてから新しい右ペインを追加する
@@ -256,6 +252,15 @@ export class Editor {
         // ペインスタックナビゲーションで右スロットの内容が差し替わるため、
         // 現在のトグル状態（表示/非表示）を反映する
         this.applyRelationsPanelVisibility();
+    }
+
+    /** View iframe の browsing context を保持するため、通常の左ペインは DOM から切断しない。 */
+    private replaceVisibleLeftPane(element: HTMLElement): void {
+        for (const child of [...this.leftSlot.children]) {
+            if (child !== this.leftPane && child !== element) child.remove();
+        }
+        this.leftPane.style.display = element === this.leftPane ? '' : 'none';
+        if (element.parentElement !== this.leftSlot) this.leftSlot.appendChild(element);
     }
 
     /**
@@ -352,19 +357,14 @@ export class Editor {
 
     /**
      * 差分ビューを左ペインに表示する
-     * leftSlot の内容を差分ビュー専用ラッパーに置き換える
-     * leftPane はフィールドで保持しているため hideDiffView() で復元できる
+     * 通常の leftPane は接続したまま隠し、差分ビュー専用ラッパーを表示する
      */
     showDiffView(diffView: DiffView): void {
-        // leftSlot の全子要素を除去する（leftPane はフィールドで保持されているため復元可能）
-        while (this.leftSlot.firstChild) {
-            this.leftSlot.removeChild(this.leftSlot.firstChild);
-        }
-        // 差分ビューをラッパーに包んで leftSlot に追加する
+        // iframe を含む leftPane は切断せず非表示にし、差分ビューを表示する。
         const wrapper = document.createElement('div');
         wrapper.classList.add('editor-left-pane', 'diff-view-wrapper');
         diffView.appendTo(wrapper);
-        this.leftSlot.appendChild(wrapper);
+        this.replaceVisibleLeftPane(wrapper);
         this.reattachActiveScrollbarMarkerTrack();
 
         // 右スロットを非表示にして差分ビューを全幅で表示する
@@ -373,15 +373,11 @@ export class Editor {
 
     /**
      * 差分ビューを閉じてエディターを通常状態に戻す
-     * leftSlot を全クリアして元の leftPane を復元し、右スロットを再表示する
+     * 差分ビューを除去して接続を維持していた leftPane と右スロットを再表示する
      */
     hideDiffView(): void {
         if (!this.hasDiffView()) return;
-        // 差分ビューラッパーを除去して元の leftPane を復元する
-        while (this.leftSlot.firstChild) {
-            this.leftSlot.removeChild(this.leftSlot.firstChild);
-        }
-        this.leftSlot.appendChild(this.leftPane);
+        this.replaceVisibleLeftPane(this.leftPane);
         this.reattachActiveScrollbarMarkerTrack();
         // RelationsPanel のトグル状態を尊重して右スロットの表示を復元する
         this.applyRelationsPanelVisibility();
@@ -393,6 +389,7 @@ export class Editor {
      * 設定モード中はナビゲーションバーが不要なため非表示にする。
      */
     enterSettingsMode(): void {
+        this.replaceVisibleLeftPane(this.leftPane);
         this.rightSlot.style.display = 'none';
         this.navigationBar.style.display = 'none';
         // 設定など独自にスクロールするタブへ、通常テーブルのスクロール領域と位置を持ち越さない。

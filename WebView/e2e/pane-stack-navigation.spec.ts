@@ -96,7 +96,7 @@ async function openTableAsync(page: Page, tableName: string): Promise<Locator> {
 	const explorer = page.locator('#explorer');
 	await explorer.getByText(tableName, { exact: true }).click();
 	// タブ切替後は editor-left-slot 内の EditorTable を返す（新DOM構造対応）
-	const table = page.locator('.editor-left-slot .editor-table');
+	const table = page.locator('.editor-left-slot .editor-table:visible');
 	await expect(table).toBeVisible();
 	return table;
 }
@@ -229,11 +229,11 @@ test.describe('ペインスタックナビゲーション', () => {
 		await page.locator('.editor-navigation-bar .nav-left').click();
 
 		// 左スロットにEditorTable（worldテーブル）が表示されること
-		const leftSlotEditorTable = page.locator('.editor-left-slot .editor-table');
+		const leftSlotEditorTable = page.locator('.editor-left-slot .editor-table:visible');
 		await expect(leftSlotEditorTable).toBeVisible();
 
 		// world テーブルのヘッダー（name列）が左スロットに存在すること
-		const worldNameHeader = page.locator('.editor-left-slot .editor-table-detached-column-header-layer .editor-table-column-header')
+		const worldNameHeader = page.locator('.editor-left-slot .editor-table-detached-column-header-layer .editor-table-column-header:visible')
 			.filter({ hasText: 'name' });
 		await expect(worldNameHeader).toBeVisible();
 

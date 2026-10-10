@@ -37,21 +37,7 @@ namespace App.MasterDataEditor
 				}
 
 				var workDir = AppEnvironment.GetWorkDir();
-				var filePath = HelperFile.ResolveSafePath(workDir, filename);
-
-				if (filePath == null)
-				{
-					Logger.Warning($"ファイル削除拒否: workDir外へのアクセス {filename}");
-					return new
-					{
-						type = "delete_file_response",
-						requestId,
-						success = false,
-						error = "Invalid filename"
-					};
-				}
-
-				if (!File.Exists(filePath))
+				if (!WorkspaceFileAccess.DeleteFile(workDir, filename))
 				{
 					return new
 					{
@@ -62,7 +48,6 @@ namespace App.MasterDataEditor
 					};
 				}
 
-				File.Delete(filePath);
 
 				return new
 				{

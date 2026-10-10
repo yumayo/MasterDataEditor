@@ -42,6 +42,24 @@ public partial class MainWindow : Window
 		Logger.Info("MainWindow initialized with WebView2");
 	}
 
+    private void OnWorkspaceTrustClick(object sender, RoutedEventArgs e)
+    {
+        var workDir = AppEnvironment.GetWorkDir();
+        if (WorkspaceTrust.IsTrusted(workDir))
+        {
+            WorkspaceTrust.Revoke();
+        }
+        else
+        {
+            var result = MessageBox.Show(this, $"この作業フォルダーの作成者と内容を信頼しますか？\n\n{workDir}\n\nプラグイン、保存フック、ターミナル、Git が有効になります。保存フックや Git 設定は、このユーザーの権限でプログラムを実行できます。信頼はこの起動中だけ有効です。", "作業フォルダーの信頼", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (result != MessageBoxResult.Yes) return;
+            WorkspaceTrust.GrantFromNativeUi(workDir);
+        }
+        var trusted = WorkspaceTrust.IsTrusted(workDir);
+        workspaceTrustButton.Content = trusted ? "信頼を解除" : "作業フォルダーを信頼…";
+        workspaceTrustStatus.Text = trusted ? "信頼済み：この起動中は作業フォルダーのコードを実行できます" : "制限モード：プラグイン・保存フック・ターミナル・Git は無効です";
+    }
+
 	private async Task InitializeWebView2handler()
 	{
 		if (_closed)

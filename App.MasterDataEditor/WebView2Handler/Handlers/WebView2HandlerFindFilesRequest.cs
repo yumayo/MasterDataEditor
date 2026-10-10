@@ -40,45 +40,7 @@ namespace App.MasterDataEditor
 				}
 
 				var workDir = AppEnvironment.GetWorkDir();
-				Directory.CreateDirectory(workDir);
-				var dirPath = HelperFile.ResolveSafePath(workDir, directory);
-
-				if (dirPath == null)
-				{
-					Logger.Warning($"ファイル一覧取得拒否: workDir外へのアクセス {directory}");
-					return new
-					{
-						type = "find_files_response",
-						requestId,
-						success = false,
-						error = "Invalid directory"
-					};
-				}
-
-				var files = new List<object>();
-				var dirs = new List<object>();
-
-				if (Directory.Exists(dirPath))
-				{
-					// ファイルを取得
-					var fileInfos = Directory.EnumerateFiles(dirPath);
-					files = fileInfos.Select(f => new
-					{
-						name = Path.GetFileName(f),
-						type = "file",
-						size = new FileInfo(f).Length
-					}).ToList<object>();
-
-					// ディレクトリを取得
-					var dirInfos = Directory.EnumerateDirectories(dirPath);
-					dirs = dirInfos.Select(d => new
-					{
-						name = Path.GetFileName(d),
-						type = "directory"
-					}).ToList<object>();
-				}
-
-				var items = dirs.Concat(files).ToList();
+				var items = WorkspaceFileAccess.FindEntries(workDir, directory);
 
 				return new
 				{

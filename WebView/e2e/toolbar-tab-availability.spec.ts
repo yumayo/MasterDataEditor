@@ -119,7 +119,7 @@ test.describe('toolbarのタブ別利用可否', () => {
 
         await page.locator('.activity-bar-item[data-panel="views"]').click();
         await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
-        await expect(page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"] .summary-marker')).toBeVisible();
+        await expect(page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe').locator('.summary-marker')).toBeVisible();
         await expectToolbarButtonsAsync(page, 'none');
 
         await page.locator('[data-panel="sourceControl"]').click();

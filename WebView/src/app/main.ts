@@ -36,6 +36,7 @@ import {createSchemaEntryFromJson, type SchemaEntry} from "../editor-api/editor-
 import type {BookmarkEntry} from "../panels/bookmark-panel";
 import {BOOKMARKS_FILE, BOOKMARKS_FILE_OPTIONS} from "../config/masterdataeditor-path";
 import {readStoredUiStateAsync, UiStateStore} from "./ui-state";
+import {initializeWorkspaceTrustAsync, isWorkspaceTrusted, WORKSPACE_TRUST_CHANGED} from "./workspace-trust";
 import {ViewPluginHost} from "../plugins/view-plugin-host";
 
 (async () => {
@@ -48,6 +49,8 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     statusBar.appendTo(document.body);
     // テスト用: window.notification を公開する（e2eテストから window.notification.show() で呼び出す）
     (window as unknown as Record<string, unknown>)['notification'] = notification;
+
+    await initializeWorkspaceTrustAsync();
 
     // 保存済み設定を起動直後に適用する（body[data-theme] やタブ折り返しの初期値を上書きする）
     await applyStoredSettingsAsync();
@@ -106,6 +109,9 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
 
     const viewPluginHost = new ViewPluginHost(editorApi, store, notification);
     tab.connectViewPluginHost(viewPluginHost);
+    window.addEventListener(WORKSPACE_TRUST_CHANGED, () => {
+        if (!isWorkspaceTrusted()) tab.reloadViewPluginTabs();
+    });
 
     const realSidebar = new Sidebar(
         explorerElement,

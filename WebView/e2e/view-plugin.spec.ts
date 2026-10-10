@@ -158,9 +158,10 @@ test.describe('Viewプラグイン', () => {
         await page.locator('.view-plugin-item[data-plugin-id="legacy"]').click();
 
         await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Legacy View');
-        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="legacy"]');
+        const viewRoot = page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="legacy"] iframe').locator('.view-plugin-sandbox-root');
         await expect(viewRoot.locator('.legacy-count')).toHaveText('3');
-        await expect(viewRoot).toHaveAttribute('data-internal-emit-type', 'function');
+        await expect(viewRoot).toHaveAttribute('data-internal-emit-type', 'undefined');
+        expect(await viewRoot.evaluate(element => (element.ownerDocument.defaultView as unknown as {masterDataEditor: {apiVersion: number}}).masterDataEditor.apiVersion)).toBe(2);
     });
 
     test('一覧からViewタブを開き、内部APIでテーブルを読み書きできる', async ({page}) => {
@@ -171,9 +172,6 @@ test.describe('Viewプラグイン', () => {
         const item = page.locator('.view-plugin-item[data-plugin-id="summary"]');
         await expect(item).toBeVisible();
         await expect(item.locator('.view-plugin-item-title')).toHaveText('Summary View');
-        await expect.poll(() => page.evaluate(() => {
-            return (window as unknown as {masterDataEditor: {apiVersion: number}}).masterDataEditor.apiVersion;
-        })).toBe(2);
 
         await item.click();
         await expect(item).toHaveClass(/view-plugin-item-active/);
@@ -187,9 +185,10 @@ test.describe('Viewプラグイン', () => {
         });
         await expect(item).toHaveCSS('background-color', selectedBackground);
         await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');
-        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]');
+        const viewRoot = page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe').locator('.view-plugin-sandbox-root');
         await expect(viewRoot.locator('.summary-count')).toHaveText('3');
         await expect(viewRoot).toHaveAttribute('data-internal-emit-type', 'undefined');
+        expect(await viewRoot.evaluate(element => (element.ownerDocument.defaultView as unknown as {masterDataEditor: {apiVersion: number}}).masterDataEditor.apiVersion)).toBe(2);
 
         await page.locator('.tab-button-active').click({button: 'right'});
         const contextMenu = page.locator('.context-menu.visible');
@@ -232,7 +231,7 @@ test.describe('Viewプラグイン', () => {
 
         await openViewPluginPanelAsync(page);
         await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
-        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]');
+        const viewRoot = page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe').locator('.view-plugin-sandbox-root');
         await expect(viewRoot.locator('.summary-count')).toHaveText('3');
 
         await viewRoot.locator('.summary-open-table').click();
@@ -260,7 +259,7 @@ test.describe('Viewプラグイン', () => {
 
         await openViewPluginPanelAsync(page);
         await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
-        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]');
+        const viewRoot = page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe').locator('.view-plugin-sandbox-root');
         await expect(viewRoot.locator('.summary-count')).toHaveText('3');
 
         await viewRoot.locator('.summary-edit-multiple').click();
@@ -297,7 +296,7 @@ test.describe('Viewプラグイン', () => {
         await openViewPluginPanelAsync(page);
         await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
         await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');
-        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]');
+        const viewRoot = page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe').locator('.view-plugin-sandbox-root');
         const openButton = viewRoot.locator('.summary-open-table');
 
         await openButton.click();
@@ -319,7 +318,7 @@ test.describe('Viewプラグイン', () => {
 
         await openViewPluginPanelAsync(page);
         await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
-        const viewRoot = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]');
+        const viewRoot = page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe').locator('.view-plugin-sandbox-root');
         await expect(viewRoot.locator('.summary-count')).toHaveText('3');
 
         const reloadedPlugin = [
@@ -351,7 +350,7 @@ test.describe('Viewプラグイン', () => {
         await openViewPluginPanelAsync(page);
         await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
         await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');
-        await expect(page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"] .summary-count')).toHaveText('3');
+        await expect(page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe').locator('.summary-count')).toHaveText('3');
         await waitForSavedViewTabAsync(page);
 
         const savedRaw = await readMockFileAsync(page, UI_STATE_FILE);
@@ -363,7 +362,7 @@ test.describe('Viewプラグイン', () => {
         await secondPage.goto('/');
 
         await expect(secondPage.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');
-        await expect(secondPage.locator('.view-plugin-tab-root[data-view-plugin-id="summary"] .summary-count')).toHaveText('3');
+        await expect(secondPage.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe').locator('.summary-count')).toHaveText('3');
         await secondPage.close();
     });
 });

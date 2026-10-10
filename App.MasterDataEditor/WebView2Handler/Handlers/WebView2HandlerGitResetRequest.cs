@@ -24,7 +24,8 @@ namespace App.MasterDataEditor
 					return new { type = "git_reset_response", requestId, success = false, error = validationError };
 				}
 
-				GitCommandHelper.RunGitCommand(gitRoot, "reset", "HEAD", path);
+				// reset -- path は index だけを更新する。既に親ごと削除されたファイルも unstage できる。
+				GitCommandHelper.RunGitLiteralPathCommand(gitRoot, "reset", "HEAD", "--", path!);
 
 				return new
 				{

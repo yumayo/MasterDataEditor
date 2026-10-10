@@ -1,4 +1,4 @@
-﻿<Window x:Class="App.MasterDataEditor.MainWindow"
+<Window x:Class="App.MasterDataEditor.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -10,5 +10,13 @@
         Height="450"
         Width="800"
         WindowStyle="SingleBorderWindow">
-    <wv2:WebView2 Name="webView2" Focusable="True" />
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Background="#FFF2D5" Padding="8,4">
+            <DockPanel LastChildFill="True">
+                <Button Name="workspaceTrustButton" DockPanel.Dock="Right" Content="作業フォルダーを信頼…" Click="OnWorkspaceTrustClick" Padding="8,2" Margin="8,0,0,0" />
+                <TextBlock Name="workspaceTrustStatus" Text="制限モード：プラグイン・保存フック・ターミナル・Git は無効です" VerticalAlignment="Center" TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+        <wv2:WebView2 Name="webView2" Focusable="True" />
+    </DockPanel>
 </Window>

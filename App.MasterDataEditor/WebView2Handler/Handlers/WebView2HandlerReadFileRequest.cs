@@ -41,26 +41,7 @@ namespace App.MasterDataEditor
 				}
 
 				var baseDir = GetBaseDirectory(scope);
-				Directory.CreateDirectory(baseDir);
-				var filePath = HelperFile.ResolveSafePath(baseDir, relativeFilename);
-
-				if (filePath == null)
-				{
-					Logger.Warning($"ファイル読み込み拒否: baseDir外へのアクセス scope={scope} filename={filename} relativeFilename={relativeFilename}");
-					return new
-					{
-						type = "read_file_response",
-						requestId,
-						success = false,
-						error = "Invalid filename",
-					};
-				}
-
-				string data = "";
-				if (File.Exists(filePath))
-				{
-					data = File.ReadAllText(filePath);
-				}
+				var data = WorkspaceFileAccess.ReadAllText(baseDir, relativeFilename);
 
 				return new
 				{

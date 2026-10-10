@@ -1,3 +1,4 @@
+import {isWorkspaceTrusted} from "../app/workspace-trust";
 import {ViewPluginHost, type ViewPluginDescriptor} from "../plugins/view-plugin-host";
 
 export class ViewPluginPanel {
@@ -82,7 +83,7 @@ export class ViewPluginPanel {
         if (plugins.length === 0) {
             const empty = document.createElement('div');
             empty.classList.add('view-plugin-empty');
-            empty.textContent = 'No view plugins';
+            empty.textContent = isWorkspaceTrusted() ? 'No view plugins' : '制限モード：Viewプラグインは無効です。ウィンドウ上部で作業フォルダーの信頼を確認してください。';
             this.contentElement.appendChild(empty);
             return;
         }

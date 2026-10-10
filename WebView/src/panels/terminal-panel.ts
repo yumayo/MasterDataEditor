@@ -1,3 +1,4 @@
+import {isWorkspaceTrusted} from "../app/workspace-trust";
 import {Terminal} from '@xterm/xterm';
 import {FitAddon} from '@xterm/addon-fit';
 import type {NotificationToast} from '../ui/notification';
@@ -155,7 +156,17 @@ export class TerminalPanel {
                 // 他のWebView利用者が送信したJSON以外のメッセージは端末のプロトコルではない。
                 return;
             }
-            if (typeof message !== 'object' || message === null || !('type' in message) || typeof message.type !== 'string' || !message.type.startsWith('terminal_')) return;
+            if (typeof message !== 'object' || message === null || !('type' in message) || typeof message.type !== 'string') return;
+            if (message.type === 'workspace_trust_changed') {
+                if (!isWorkspaceTrusted()) {
+                    this.state = {kind: 'idle'};
+                    for (const request of this.pending.values()) { window.clearTimeout(request.timer); request.reject(new Error('作業フォルダーの信頼が解除されました')); }
+                    this.pending.clear();
+                }
+                this.renderState();
+                return;
+            }
+            if (!message.type.startsWith('terminal_')) return;
             const data = message as Record<string, unknown>;
             if (typeof data['requestId'] === 'string' && this.pending.has(data['requestId'])) {
                 const request = this.pending.get(data['requestId'])!;
@@ -256,6 +267,7 @@ export class TerminalPanel {
     }
 
     private async startAsync(): Promise<void> {
+        if (!isWorkspaceTrusted()) { this.renderState(); return; }
         if (this.disposed || this.state.kind === 'starting' || this.state.kind === 'running' || this.state.kind === 'closing') return;
         this.ensureOpened();
         const sessionId = crypto.randomUUID();
@@ -348,6 +360,8 @@ export class TerminalPanel {
         this.startButton.setAttribute('aria-label', state.kind === 'idle' ? 'ターミナルを開始' : 'ターミナルを再起動');
         this.closeButton.hidden = state.kind !== 'running' && state.kind !== 'closing';
         this.closeButton.disabled = state.kind === 'closing';
+        this.startButton.disabled = !isWorkspaceTrusted();
+        if (!isWorkspaceTrusted()) this.status.textContent = '制限モード：ウィンドウ上部で信頼を確認してください';
     }
 
     private applyTheme(): void {

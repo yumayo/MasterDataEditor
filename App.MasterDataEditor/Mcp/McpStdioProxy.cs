@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -11,17 +12,18 @@ using System.Threading.Tasks;
 namespace App.MasterDataEditor.Mcp;
 
 /// <summary>
-/// Claude Desktopからのstdio接続を受け、メインアプリのMCP HTTPサーバーに転送するプロキシ。
+/// Claude Desktopからのstdio接続を受け、メインアプリのMCPサーバーに転送するプロキシ。
 /// stdin/stdoutのJSON-RPCメッセージをStreamable HTTP POSTに変換して中継する。
 ///
 /// 構成:
-///   Claude Desktop ←(stdio)→ McpStdioProxy ←(HTTP)→ McpHttpServer (localhost:3001)
+///   Claude Desktop ←(stdio)→ McpStdioProxy ←(同一ユーザー専用の名前付きパイプ内 HTTP)→ McpHttpServer
 ///
-/// Claude DesktopがローカルHTTP MCPに直接接続できるようになれば、このプロキシは不要になる。
+/// 同一 Windows ユーザーを検証するため、接続には常にこのプロキシを使用する。
 /// </summary>
+[SupportedOSPlatform("windows")]
 public static class McpStdioProxy
 {
-	private const string McpHttpServerUrl = "http://localhost:3001/";
+	private const string McpHttpServerUrl = McpPipeTransport.Endpoint;
 	private const string SseDataPrefix = "data: ";
 	private const int MaxRetryCount = 10;
 	private const int PostRetryCount = 3;
@@ -38,7 +40,7 @@ public static class McpStdioProxy
 		Console.OutputEncoding = Encoding.UTF8;
 
 		// リクエストあたり3秒タイムアウト × 3回リトライ + wait2秒 ≒ 最大約11秒で応答を返す
-		using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+		using var httpClient = McpPipeTransport.CreateHttpClient();
 		string? sessionId = null;
 
 		await WaitForServerAsync(httpClient, cancellationToken);
@@ -152,7 +154,7 @@ public static class McpStdioProxy
 		using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 		using var reader = new StreamReader(stream, Encoding.UTF8);
 
-		while (!reader.EndOfStream)
+		while (true)
 		{
 			var sseLine = await reader.ReadLineAsync(cancellationToken);
 
@@ -221,7 +223,7 @@ public static class McpStdioProxy
 	}
 
 	/// <summary>
-	/// メインアプリのHTTP MCPサーバーが起動するまで待機する。
+	/// メインアプリの同一ユーザー専用 MCP サーバーが起動するまで待機する。
 	/// </summary>
 	private static async Task WaitForServerAsync(HttpClient httpClient, CancellationToken cancellationToken)
 	{
@@ -229,17 +231,18 @@ public static class McpStdioProxy
 		{
 			try
 			{
-				using var response = await httpClient.GetAsync(McpHttpServerUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-				Console.Error.WriteLine("[McpStdioProxy] Connected to MCP HTTP server");
+				using var response = await httpClient.GetAsync(McpHttpServerUrl + "health", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+				if (response.StatusCode != System.Net.HttpStatusCode.NoContent) throw new HttpRequestException("MCP health check failed.");
+				Console.Error.WriteLine("[McpStdioProxy] Connected to current-user MCP named pipe");
 				return;
 			}
-			catch (HttpRequestException)
+			catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException && !cancellationToken.IsCancellationRequested)
 			{
 				Console.Error.WriteLine($"[McpStdioProxy] Waiting for MCP HTTP server... (attempt {attempt + 1}/{MaxRetryCount})");
 				await Task.Delay(RetryInterval, cancellationToken);
 			}
 		}
 
-		Console.Error.WriteLine("[McpStdioProxy] Warning: Could not confirm MCP HTTP server availability, proceeding anyway");
+		throw new IOException("同一ユーザーの MCP サーバーに接続できません。MasterDataEditor を起動してください。");
 	}
 }

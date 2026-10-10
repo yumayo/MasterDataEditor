@@ -30,7 +30,7 @@ public class WebView2Handler : IDisposable
 	private bool _terminalNavigationPending;
 	private readonly IDisposable _fileWatcherHandle;
 	private readonly IDisposable _schemaWatcherHandle;
-	private readonly IDisposable _gitWatcherHandle;
+	private IDisposable _gitWatcherHandle = NullDisposable.Instance;
 	// 書き込み・削除・git状態変更系はバックグラウンド上でも受信順を維持する。
 	private readonly SemaphoreSlim _orderedIoLock = new(1, 1);
 
@@ -48,6 +48,7 @@ public class WebView2Handler : IDisposable
 		_webView2 = webView2;
 		_consoleLogPath = consoleLogPath;
 		_terminalHost = new TerminalHost(SendTerminalMessageAsync);
+		WorkspaceTrust.Changed += OnWorkspaceTrustChanged;
 		_webView2.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
 		_webView2.CoreWebView2.NavigationStarting += OnTerminalNavigationStarting;
 		_webView2.CoreWebView2.NavigationCompleted += OnTerminalNavigationCompleted;
@@ -89,22 +90,7 @@ public class WebView2Handler : IDisposable
 			Logger.Info($"schema/ ディレクトリが存在しないためファイル監視をスキップ: {schemaDirectory}");
 		}
 
-		// .git/ ディレクトリ全体を監視し、git操作時に git_changed メッセージを送信する
-		var gitRoot = GitCommandHelper.GetGitRoot(AppEnvironment.GetWorkDir());
-		var gitDirectory = Path.Combine(gitRoot, ".git");
-		if (Directory.Exists(gitDirectory))
-		{
-			_gitWatcherHandle = new GitWatcher(gitDirectory, () =>
-			{
-				SendMessageToWebView(new { type = "git_changed" });
-			});
-			Logger.Info($"Git監視を開始: {gitDirectory}");
-		}
-		else
-		{
-			_gitWatcherHandle = NullDisposable.Instance;
-			Logger.Info($".git/ が存在しないためGit監視をスキップ: {gitDirectory}");
-		}
+		if (WorkspaceTrust.IsTrusted(AppEnvironment.GetWorkDir())) OnWorkspaceTrustChanged();
 	}
 
 	private static string[] ToWorkDirRelativePaths(string[] fullPaths)
@@ -251,6 +237,7 @@ public class WebView2Handler : IDisposable
 		_webView2.CoreWebView2.NavigationStarting -= OnTerminalNavigationStarting;
 		_webView2.CoreWebView2.NavigationCompleted -= OnTerminalNavigationCompleted;
 		_consoleReceiver.DevToolsProtocolEventReceived -= OnConsoleAPICalled;
+		WorkspaceTrust.Changed -= OnWorkspaceTrustChanged;
 		_terminalHost.Dispose();
 		_fileWatcherHandle.Dispose();
 		_schemaWatcherHandle.Dispose();
@@ -301,6 +288,8 @@ public class WebView2Handler : IDisposable
 	private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
 	{
 		if (Volatile.Read(ref _disposed) != 0) return;
+		// iframe の WebMessageReceived は購読しない。トップ文書からの全 API を同じ境界で検査する。
+		if (!IsTrustedTerminalSource(e.Source) || !IsTrustedTerminalSource(_webView2.CoreWebView2.Source)) return;
 		try
 		{
 			string? messageJson;
@@ -337,8 +326,18 @@ public class WebView2Handler : IDisposable
 					// リクエストIDを抽出する（並列リクエストのレスポンス照合に使用）
 					var requestId = root.TryGetProperty("requestId", out var ridElement) ? ridElement.GetString() ?? "" : "";
 
+                    if (messageType != null && (messageType.StartsWith("git_", StringComparison.Ordinal) || messageType == "terminal_start_request") && !WorkspaceTrust.IsTrusted(AppEnvironment.GetWorkDir()))
+                    {
+                        SendMessageToWebView(new {type = messageType.Replace("_request", "_response", StringComparison.Ordinal), requestId, sessionId = root.TryGetProperty("sessionId", out var sid) ? sid.GetString() : "", success = false, error = "制限モードでは Git とターミナルを使用できません。ウィンドウ上部で作業フォルダーの信頼を確認してください。"});
+                        return;
+                    }
+
 					switch (messageType)
 					{
+						case "workspace_trust_request":
+							SendMessageToWebView(new {type = "workspace_trust_response", requestId, success = true, data = new {trusted = WorkspaceTrust.IsTrusted(AppEnvironment.GetWorkDir())}});
+							break;
+
 						case "terminal_output_ack":
 							if (!_terminalNavigationPending && IsTrustedTerminalSource(e.Source) && IsTrustedTerminalSource(_webView2.CoreWebView2.Source)) _terminalHost.HandleOutputAcknowledgement(root);
 							break;
@@ -430,6 +429,24 @@ public class WebView2Handler : IDisposable
 		}
 	}
 
+    private void OnWorkspaceTrustChanged()
+    {
+        var trusted = WorkspaceTrust.IsTrusted(AppEnvironment.GetWorkDir());
+        _gitWatcherHandle.Dispose();
+        _gitWatcherHandle = NullDisposable.Instance;
+        if (!trusted) _terminalHost.ResetDocument();
+        else
+        {
+            try
+            {
+                var gitDirectory = Path.Combine(GitCommandHelper.GetGitRoot(AppEnvironment.GetWorkDir()), ".git");
+                if (Directory.Exists(gitDirectory)) _gitWatcherHandle = new GitWatcher(gitDirectory, () => SendMessageToWebView(new {type = "git_changed"}));
+            }
+            catch (Exception ex) { Logger.Warning("Git監視を開始できませんでした: " + ex.Message); }
+        }
+        SendMessageToWebView(new {type = "workspace_trust_changed", trusted});
+    }
+
 	private void OnTerminalNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
 	{
 		_terminalNavigationPending = true;
@@ -471,7 +488,14 @@ public class WebView2Handler : IDisposable
 	{
 		// root は using スコープの JsonDocument に紐づくため、バックグラウンド処理へ渡す前に独立させる。
 		var clonedRoot = root.Clone();
-		_ = RunRequestInBackgroundAsync(() => requestHandler(clonedRoot, requestId), preserveRequestOrder, timing);
+        var isGit = root.GetProperty("type").GetString()?.StartsWith("git_", StringComparison.Ordinal) == true;
+        var generation = WorkspaceTrust.GetGeneration(AppEnvironment.GetWorkDir());
+        _ = RunRequestInBackgroundAsync(() =>
+        {
+            if (isGit && (generation == 0 || WorkspaceTrust.GetGeneration(AppEnvironment.GetWorkDir()) != generation))
+                return new {type = clonedRoot.GetProperty("type").GetString()!.Replace("_request", "_response", StringComparison.Ordinal), requestId, success = false, error = "作業フォルダーの信頼が解除されました。"};
+            return requestHandler(clonedRoot, requestId);
+        }, preserveRequestOrder, timing);
 	}
 
 	private async Task RunRequestInBackgroundAsync(Func<object> requestHandler, bool preserveRequestOrder, GitBlameTiming? timing)

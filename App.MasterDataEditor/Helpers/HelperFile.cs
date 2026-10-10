@@ -37,6 +37,17 @@ namespace App.MasterDataEditor
 				return false;
 			}
 
+			// Win32 の正規化で別名になる末尾の空白・ピリオド、デバイス名を拒否する。
+			// Linux の検査でも Windows 上と同じ規則を適用する。
+			foreach (var component in filename.Replace('\\', '/').Split('/'))
+			{
+				if (component.Length == 0 || component == "." || component.EndsWith(' ') || component.EndsWith('.')) return false;
+				if (component.Any(c => c < 32 || "<>\"|?*".Contains(c))) return false;
+				var device = component.Split('.')[0].ToUpperInvariant();
+				if (device is "CON" or "PRN" or "AUX" or "NUL" or "CONIN$" or "CONOUT$") return false;
+				if (device.Length == 4 && (device.StartsWith("COM", StringComparison.Ordinal) || device.StartsWith("LPT", StringComparison.Ordinal)) && "123456789¹²³".Contains(device[3])) return false;
+			}
+
 			// 無効な文字をチェック
 			var invalidChars = Path.GetInvalidPathChars();
 			if (filename.Any(c => invalidChars.Contains(c)))
@@ -57,6 +68,7 @@ namespace App.MasterDataEditor
 		{
 			try
 			{
+				if (!IsValidFilename(requestedPath)) return null;
 				var fullPath = Path.GetFullPath(Path.Combine(baseDir, requestedPath));
 				var normalizedBase = Path.GetFullPath(baseDir);
 				if (!normalizedBase.EndsWith(Path.DirectorySeparatorChar.ToString()))
@@ -64,9 +76,25 @@ namespace App.MasterDataEditor
 					normalizedBase += Path.DirectorySeparatorChar;
 				}
 
-				if (!fullPath.StartsWith(normalizedBase, StringComparison.OrdinalIgnoreCase))
+				var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+				if (!fullPath.StartsWith(normalizedBase, comparison))
 				{
 					return null;
+				}
+
+				// 作業フォルダー自身と、その祖先も検査する。存在しない末尾だけは作成用に許可する。
+				// この検査だけでは差し替え競合を防げないため、実 I/O は WorkspaceFileAccess を使用する。
+				var current = Path.GetPathRoot(fullPath) ?? throw new ArgumentException("Invalid path root");
+				foreach (var component in fullPath.Substring(current.Length).Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+				{
+					if (!IsValidFilename(component)) return null;
+					current = Path.Combine(current, component);
+					try
+					{
+						if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) return null;
+					}
+					catch (FileNotFoundException) { }
+					catch (DirectoryNotFoundException) { }
 				}
 
 				return fullPath;
@@ -76,6 +104,8 @@ namespace App.MasterDataEditor
 				// NUL文字等の不正な文字列がPath.GetFullPathに渡された場合
 				return null;
 			}
+			catch (IOException) { return null; }
+			catch (UnauthorizedAccessException) { return null; }
 		}
 	}
 }

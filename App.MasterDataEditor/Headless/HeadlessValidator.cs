@@ -40,6 +40,8 @@ internal static class HeadlessValidator
         Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), Encoding.UTF8) { AutoFlush = true });
         Console.SetError(new StreamWriter(Console.OpenStandardError(), Encoding.UTF8) { AutoFlush = true });
 
+        Console.Error.WriteLine("制限モード: 作業フォルダーのプラグイン検証は実行しません。標準のデータ検証のみを実行します。");
+
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         var exitCode = 1;
         app.Startup += (_, _) =>
