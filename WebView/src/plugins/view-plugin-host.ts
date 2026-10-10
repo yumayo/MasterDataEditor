@@ -16,6 +16,7 @@ export class ViewPluginHost {
     private readonly notification: NotificationToast;
     private readonly registrations = new Map<string, {descriptor: ViewPluginDescriptor; code: string}>();
     private readonly listeners: Array<() => void> = [];
+    private readonly loadedListeners: Array<() => void> = [];
     private readonly frames = new Set<ViewPluginFrame>();
     private readonly api: Omit<ViewPluginAPI, 'view'>;
     private loaded = false;
@@ -36,7 +37,7 @@ export class ViewPluginHost {
         const generation = this.generation;
         let files: Array<{name: string; type: 'file' | 'directory'}>;
         try { files = await findFilesAsync('plugins/views'); }
-        catch { this.notifyChanged(); return; }
+        catch { this.notifyLoaded(generation); return; }
         for (const file of files) {
             if (file.type !== 'file' || !file.name.endsWith('.js')) continue;
             if (!isWorkspaceTrusted() || generation !== this.generation) return;
@@ -60,7 +61,7 @@ export class ViewPluginHost {
                 this.notification.showError(error, 'Viewプラグインの読み込みに失敗しました: ' + file.name + ' — ' + (error instanceof Error ? error.message : String(error)));
             } finally { container.remove(); }
         }
-        this.notifyChanged();
+        this.notifyLoaded(generation);
     }
 
     async reloadPluginsAsync(): Promise<void> {
@@ -91,6 +92,18 @@ export class ViewPluginHost {
     onDidChange(listener: () => void): {dispose(): void} {
         this.listeners.push(listener);
         return {dispose: () => { const index = this.listeners.indexOf(listener); if (index !== -1) this.listeners.splice(index, 1); }};
+    }
+
+    /** 読み込み途中の空一覧ではなく、現在の世代の登録が確定したときだけ通知する。 */
+    onDidLoad(listener: () => void): {dispose(): void} {
+        this.loadedListeners.push(listener);
+        return {dispose: () => { const index = this.loadedListeners.indexOf(listener); if (index !== -1) this.loadedListeners.splice(index, 1); }};
+    }
+
+    private notifyLoaded(generation: number): void {
+        if (!isWorkspaceTrusted() || generation !== this.generation) return;
+        this.notifyChanged();
+        for (const listener of [...this.loadedListeners]) listener();
     }
 
     private notifyChanged(): void { for (const listener of [...this.listeners]) listener(); }

@@ -6,16 +6,14 @@ export class ViewPluginPanel {
     private readonly contentElement: HTMLElement;
     private readonly host: ViewPluginHost;
     private readonly openView: (pluginId: string) => void;
-    private readonly reloadOpenViews: () => void;
     private readonly subscription: { dispose(): void };
     private readonly items: Map<string, HTMLElement>;
     private activePluginId: string | null;
     private reloading: boolean;
 
-    constructor(host: ViewPluginHost, openView: (pluginId: string) => void, reloadOpenViews: () => void) {
+    constructor(host: ViewPluginHost, openView: (pluginId: string) => void) {
         this.host = host;
         this.openView = openView;
-        this.reloadOpenViews = reloadOpenViews;
         this.items = new Map();
         this.activePluginId = null;
         this.reloading = false;
@@ -102,7 +100,6 @@ export class ViewPluginPanel {
         button.disabled = true;
         try {
             await this.host.reloadPluginsAsync();
-            this.reloadOpenViews();
         } finally {
             this.reloading = false;
             button.disabled = false;

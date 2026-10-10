@@ -2501,6 +2501,11 @@ export class Tab {
             if (pluginId === undefined) continue;
             if (this.viewPluginHost.getPlugin(pluginId) === null) {
                 if (this.activeTabName === tabName) removedActiveTab = true;
+                // 初期表示前に復元予定のViewが消えた場合も、残ったタブへ選択を戻す。
+                if (this.pendingRestoredViewPluginActiveTabName === tabName) {
+                    this.pendingRestoredViewPluginActiveTabName = null;
+                    if (this.activeTabName === false) removedActiveTab = true;
+                }
                 this.destroyViewPluginTab(tabName);
                 this.removeTabButton(tabName);
                 continue;
@@ -4638,6 +4643,8 @@ export class Tab {
     /** Viewプラグインホストを後から接続する（main.tsで構築後に呼ばれる） */
     connectViewPluginHost(host: ViewPluginHost): void {
         this.viewPluginHost = host;
+        // 手動の再読み込みと信頼変更の両方で、登録確定後に既存タブを再描画する。
+        host.onDidLoad(() => this.reloadViewPluginTabs());
     }
 
     /** ui-state復元でアクティブだったViewプラグインタブを、プラグイン読み込み後に表示する */

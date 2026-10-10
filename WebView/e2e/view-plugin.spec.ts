@@ -150,6 +150,75 @@ async function waitForSavedViewTabAsync(page: Page): Promise<void> {
 }
 
 test.describe('Viewプラグイン', () => {
+    for (const unavailable of ['削除済み', '登録失敗']) {
+        test('保存済みのアクティブViewが' + unavailable + 'なら起動時に通常テーブルを表示する', async ({page}) => {
+            const fs = createViewPluginFileSystem();
+            if (unavailable === '削除済み') delete fs['plugins/views/summary.js'];
+            else fs['plugins/views/summary.js'] = "throw new Error('VIEW_REGISTRATION_FAILED');";
+            fs[UI_STATE_FILE] = JSON.stringify({
+                tabs: {
+                    open: [
+                        {name: 'test', description: null, diff: null, view: null},
+                        {name: 'View: Summary View', description: null, diff: null, view: {pluginId: 'summary'}},
+                    ],
+                    active: 'View: Summary View',
+                },
+            });
+            await installMockApiAsync(page, fs, true);
+            await page.goto('/');
+
+            await expect(page.locator('.tab-button-name', {hasText: /^View: Summary View$/})).toHaveCount(0);
+            await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('test');
+            await expect(page.locator('.editor-left-pane .tab-wrapper[data-tab-name="test"] .editor-table')).toBeVisible();
+        });
+    }
+
+    test('未信頼中に開いた復元Viewタブを信頼後に一覧から再び開くと描画する', async ({page}) => {
+        const fs = createViewPluginFileSystem();
+        fs[UI_STATE_FILE] = JSON.stringify({
+            tabs: {
+                open: [
+                    {name: 'test', description: null, diff: null, view: null},
+                    {name: 'View: Summary View', description: null, diff: null, view: {pluginId: 'summary'}},
+                ],
+                active: 'test',
+            },
+        });
+        await installMockApiAsync(page, fs, false);
+        await page.goto('/');
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('test');
+
+        await page.locator('.tab-button').filter({has: page.locator('.tab-button-name', {hasText: /^View: Summary View$/})}).click();
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');
+        await expect(page.locator('.view-plugin-sandbox-frame')).toHaveCount(0);
+
+        await page.evaluate(() => (window as unknown as {__changeWorkspaceTrustForTest(value: boolean): void}).__changeWorkspaceTrustForTest(true));
+        await openViewPluginPanelAsync(page);
+        await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
+
+        const viewFrame = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe');
+        await expect(viewFrame).toHaveAttribute('sandbox', 'allow-scripts');
+        await expect(viewFrame.contentFrame().locator('.summary-count')).toHaveText('3');
+        await expect(page.locator('.tab-button-name', {hasText: /^View: Summary View$/})).toHaveCount(1);
+    });
+
+    test('信頼済み通知を再度受けても開いているViewを描画する', async ({page}) => {
+        await installMockApiAsync(page, createViewPluginFileSystem(), true);
+        await page.goto('/');
+        await openViewPluginPanelAsync(page);
+        const item = page.locator('.view-plugin-item[data-plugin-id="summary"]');
+        await item.click();
+        const viewFrame = page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe');
+        await expect(viewFrame.contentFrame().locator('.summary-count')).toHaveText('3');
+
+        await page.evaluate(() => (window as unknown as {__changeWorkspaceTrustForTest(value: boolean): void}).__changeWorkspaceTrustForTest(true));
+        await expect(item).toBeVisible();
+
+        await expect(page.locator('.tab-button-active .tab-button-name')).toHaveText('View: Summary View');
+        await expect(viewFrame.contentFrame().locator('.summary-count')).toHaveText('3');
+        await expect(viewFrame).toHaveAttribute('sandbox', 'allow-scripts');
+    });
+
     test('apiVersionを省略したバージョン1プラグインを引き続き実行できる', async ({page}) => {
         await installMockApiAsync(page, createViewPluginFileSystem());
         await page.goto('/');
