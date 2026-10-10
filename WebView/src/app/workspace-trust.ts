@@ -3,7 +3,7 @@ import {readWorkspaceTrustAsync, invalidateGitStatusCache, invalidateGitShowCach
 export const WORKSPACE_TRUST_CHANGED = 'workspace-trust-changed';
 let trusted = false;
 
-/** UI による変更要求は提供しない。信頼を変更できるのは WPF のネイティブボタンだけ。 */
+/** 信頼を変更できるのは WPF の確認画面だけ。WebViewは現在の状態を表示する。 */
 export function isWorkspaceTrusted(): boolean { return trusted; }
 
 export async function initializeWorkspaceTrustAsync(): Promise<void> {

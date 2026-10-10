@@ -64,7 +64,8 @@
     color: var(--selection-font-color);
 }
 
-.settings-reset-setting-button {
+.settings-reset-setting-button,
+.settings-workspace-trust-button {
     flex: 0 0 auto;
     margin-left: auto;
     height: var(--settings-control-height);
@@ -84,14 +85,43 @@
     background-color: var(--hover-color);
 }
 
-.settings-reset-setting-button:focus-visible {
+.settings-reset-setting-button:focus-visible,
+.settings-workspace-trust-button:focus-visible {
     outline: 1px solid var(--focus-border);
     outline-offset: 2px;
 }
 
-.settings-reset-setting-button:disabled {
+.settings-reset-setting-button:disabled,
+.settings-workspace-trust-button:disabled {
     opacity: 0.45;
     cursor: default;
+}
+
+.settings-workspace-trust-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 0 12px;
+}
+
+.settings-workspace-trust-button {
+    margin-left: 0;
+}
+
+.settings-workspace-trust-button:hover:not(:disabled) {
+    border-color: var(--focus-border);
+    background-color: var(--hover-color);
+}
+
+.settings-workspace-trust-button:active:not(:disabled) {
+    background-color: var(--hover-color-strong);
+}
+
+.settings-workspace-trust-description {
+    margin: 8px 12px 0;
+    color: var(--secondary-font-color);
+    font-size: 12px;
 }
 
 /* 設定セクション（テーマ等のグループ） */

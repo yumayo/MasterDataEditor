@@ -1,5 +1,8 @@
 import {ToggleControl} from "../ui/toggle-control";
-import {readFileAsync, writeFileAsync, type FileScope} from "../app/api";
+import {readFileAsync, writeFileAsync, openWorkspaceTrustSettingsAsync, type FileScope} from "../app/api";
+import {notifyNativeTheme} from "../app/native-theme";
+import {isWorkspaceTrusted, WORKSPACE_TRUST_CHANGED} from "../app/workspace-trust";
+import type {NotificationToast} from "../ui/notification";
 import {TabButton} from "../tabs/tab-button";
 import {USER_SETTINGS_FILE, WORKSPACE_SETTINGS_FILE} from "../config/masterdataeditor-path";
 import {DateTimePicker, normalizeDateTimeInputToSeconds} from "../ui/date-time-picker";
@@ -57,6 +60,7 @@ const SETTINGS_SCOPE_LABELS: Record<SettingsScope, string> = {
 const SETTING_RUNTIME_APPLIERS: Partial<Record<SettingsKey, (settings: AppliedSettings) => void>> = {
     theme: (settings: AppliedSettings) => {
         document.body.dataset.theme = settings.theme;
+        notifyNativeTheme(document.body);
     },
     tabWrapEnabled: (settings: AppliedSettings) => {
         document.documentElement.style.setProperty(TAB_WRAP_ENABLED_CSS_VAR, settings.tabWrapEnabled ? '1' : '0');
@@ -408,12 +412,13 @@ export class SettingsPanel {
     private readonly tabButton: TabButton;
     private readonly documentKeydownHandler: (event: KeyboardEvent) => void;
     private readonly documentClickHandler: (event: MouseEvent) => void;
+    private readonly workspaceTrustChangedHandler: () => void;
     private readonly collapsedSections = new Set<string>();
     private readonly undoStack: SettingsHistoryEntry[];
     private readonly redoStack: SettingsHistoryEntry[];
     private nextSectionId = 0;
 
-    constructor(tabButton: TabButton) {
+    constructor(tabButton: TabButton, notification: NotificationToast) {
         this.tabButton = tabButton;
         this.settingControls = {};
         this.undoStack = [];
@@ -438,6 +443,37 @@ export class SettingsPanel {
         // 設定パネル全体のコンテナ
         this.element = document.createElement('div');
         this.element.classList.add('settings-panel');
+
+        // 信頼は現在の起動中だけ有効で、User / Workspaceの保存設定とは分離する。
+        const trustSection = this.createSection('作業フォルダーの信頼');
+        trustSection.classList.add('settings-workspace-trust');
+        const trustItems = this.getSectionItemsElement(trustSection);
+        const trustStatus = document.createElement('span');
+        trustStatus.classList.add('settings-workspace-trust-status');
+        trustStatus.setAttribute('role', 'status');
+        this.workspaceTrustChangedHandler = () => {
+            trustStatus.textContent = isWorkspaceTrusted() ? '信頼済み（この起動中のみ）' : '制限モード';
+        };
+        this.workspaceTrustChangedHandler();
+        window.addEventListener(WORKSPACE_TRUST_CHANGED, this.workspaceTrustChangedHandler);
+        const trustButton = document.createElement('button');
+        trustButton.type = 'button';
+        trustButton.classList.add('settings-workspace-trust-button');
+        trustButton.textContent = '信頼設定を開く';
+        trustButton.addEventListener('click', async () => {
+            trustButton.disabled = true;
+            try { await openWorkspaceTrustSettingsAsync(); }
+            catch (error) { notification.showError(error); }
+            finally { trustButton.disabled = false; }
+        });
+        const trustDescription = document.createElement('p');
+        trustDescription.classList.add('settings-workspace-trust-description');
+        trustDescription.textContent = '信頼の許可・解除は確認画面で行います。信頼の設定はアプリを終了するとリセットされます。';
+        const trustActions = document.createElement('div');
+        trustActions.classList.add('settings-workspace-trust-actions');
+        trustActions.append(trustStatus, trustButton);
+        trustItems.append(trustActions, trustDescription);
+        this.element.appendChild(trustSection);
 
         this.activeScope = hasAnySettingsValue(loadedSettingsState.user) ? 'user' : 'workspace';
         const userScopeButton = this.createScopeButton('user');
@@ -852,6 +888,7 @@ export class SettingsPanel {
     }
 
     destroy(): void {
+        window.removeEventListener(WORKSPACE_TRUST_CHANGED, this.workspaceTrustChangedHandler);
         document.removeEventListener('keydown', this.documentKeydownHandler, true);
         document.removeEventListener('click', this.documentClickHandler);
         for (const control of this.getSettingControls()) {

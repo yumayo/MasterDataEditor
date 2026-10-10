@@ -9,11 +9,65 @@
         Title="マスターデータエディター"
         Height="450"
         Width="800"
-        WindowStyle="SingleBorderWindow">
+        WindowStyle="SingleBorderWindow"
+        Background="{DynamicResource NativeBackground}"
+        Foreground="{DynamicResource NativeForeground}">
+    <Window.Resources>
+        <!-- WebViewの実効テーマが届くまではOSの色を使う。CSSパレットはここに複製しない。 -->
+        <SolidColorBrush x:Key="NativeBackground" Color="{DynamicResource {x:Static SystemColors.WindowColorKey}}" />
+        <SolidColorBrush x:Key="NativeSurface" Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}" />
+        <SolidColorBrush x:Key="NativeForeground" Color="{DynamicResource {x:Static SystemColors.WindowTextColorKey}}" />
+        <SolidColorBrush x:Key="NativeSecondaryForeground" Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}" />
+        <SolidColorBrush x:Key="NativeBorder" Color="{DynamicResource {x:Static SystemColors.ActiveBorderColorKey}}" />
+        <SolidColorBrush x:Key="NativeHover" Color="{DynamicResource {x:Static SystemColors.ControlLightColorKey}}" />
+        <SolidColorBrush x:Key="NativePressed" Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}" />
+        <SolidColorBrush x:Key="NativeFocus" Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
+        <Style x:Key="WorkspaceTrustButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource NativeSurface}" />
+            <Setter Property="Foreground" Value="{DynamicResource NativeForeground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource NativeBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="MinHeight" Value="26" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border Background="{TemplateBinding Background}" CornerRadius="4" />
+                            <!-- 半透明のhover/pressedは通常の背景を消さず、その上に合成する。 -->
+                            <Border x:Name="interactionOverlay" Background="Transparent" CornerRadius="4" />
+                            <Border BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                            <Border x:Name="focusBorder" BorderBrush="{DynamicResource NativeFocus}" BorderThickness="1" CornerRadius="5" Margin="-2" Visibility="Collapsed" IsHitTestVisible="False" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="interactionOverlay" Property="Background" Value="{DynamicResource NativeHover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="interactionOverlay" Property="Background" Value="{DynamicResource NativePressed}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="focusBorder" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource NativeSecondaryForeground}" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                                <Setter TargetName="interactionOverlay" Property="Background" Value="Transparent" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
     <DockPanel>
-        <Border DockPanel.Dock="Top" Background="#FFF2D5" Padding="8,4">
+        <Border Name="workspaceTrustBar" DockPanel.Dock="Top" Background="{DynamicResource NativeBackground}" BorderBrush="{DynamicResource NativeBorder}" BorderThickness="0,0,0,1" Padding="8,6">
             <DockPanel LastChildFill="True">
-                <Button Name="workspaceTrustButton" DockPanel.Dock="Right" Content="作業フォルダーを信頼…" Click="OnWorkspaceTrustClick" Padding="8,2" Margin="8,0,0,0" />
+                <Button Name="workspaceTrustButton" DockPanel.Dock="Right" Content="作業フォルダーを信頼…" Click="OnWorkspaceTrustClick" Style="{StaticResource WorkspaceTrustButtonStyle}" Margin="8,0,0,0" />
                 <TextBlock Name="workspaceTrustStatus" Text="制限モード：プラグイン・保存フック・ターミナル・Git は無効です" VerticalAlignment="Center" TextWrapping="Wrap" />
             </DockPanel>
         </Border>

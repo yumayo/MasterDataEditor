@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 
@@ -14,10 +15,12 @@ public partial class MainWindow : Window
 {
 	private WebView2Handler? _webView2Handler;
 	private bool _closed;
+    private bool _workspaceTrustDialogPending;
 
 	public MainWindow()
 	{
 		InitializeComponent();
+        WorkspaceTrust.Changed += OnWorkspaceTrustChanged;
 
 		Title = $"マスターデータ入力支援ツール";
 		WindowTitleBarTheme.Apply(this);
@@ -26,6 +29,7 @@ public partial class MainWindow : Window
 		Closed += (_, _) =>
 		{
 			_closed = true;
+            WorkspaceTrust.Changed -= OnWorkspaceTrustChanged;
 			if (_webView2Handler != null)
 			{
 				_webView2Handler.Dispose();
@@ -44,20 +48,67 @@ public partial class MainWindow : Window
 
     private void OnWorkspaceTrustClick(object sender, RoutedEventArgs e)
     {
-        var workDir = AppEnvironment.GetWorkDir();
-        if (WorkspaceTrust.IsTrusted(workDir))
+        ScheduleWorkspaceTrustDialog();
+    }
+
+    internal void ScheduleWorkspaceTrustDialog()
+    {
+        if (_closed || Dispatcher.HasShutdownStarted) throw new InvalidOperationException("終了中のウィンドウでは信頼設定を開けません。");
+        if (_workspaceTrustDialogPending) return;
+        // 予約時点でガードし、連続したWebView要求から確認画面を重ねない。
+        _workspaceTrustDialogPending = true;
+        try
         {
-            WorkspaceTrust.Revoke();
+            // 通常優先度の受理応答を先に返し、人が確認する時間をAPIタイムアウトに含めない。
+            Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+            {
+                try
+                {
+                    if (_closed) return;
+                    var workDir = AppEnvironment.GetWorkDir();
+                    var trusted = WorkspaceTrust.IsTrusted(workDir);
+                    var message = trusted
+                        ? $"この作業フォルダーの信頼を解除しますか？\n\n{workDir}\n\n実行中のプラグイン、保存フック、ターミナルを停止し、Git 操作を無効にします。View 固有の未保存状態は破棄されます。"
+                        : $"この作業フォルダーの作成者と内容を信頼しますか？\n\n{workDir}\n\nプラグイン、保存フック、ターミナル、Git が有効になります。保存フックや Git 設定は、このユーザーの権限でプログラムを実行できます。信頼はこの起動中だけ有効です。";
+                    var result = MessageBox.Show(this, message, "作業フォルダーの信頼", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+                    if (_closed || result != MessageBoxResult.Yes) return;
+                    if (trusted) WorkspaceTrust.Revoke();
+                    else WorkspaceTrust.GrantFromNativeUi(workDir);
+                }
+                catch (Exception error)
+                {
+                    Logger.Error(error, "作業フォルダーの信頼設定を変更できませんでした。");
+                    if (!_closed) MessageBox.Show(this, error.Message, "信頼設定のエラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally { _workspaceTrustDialogPending = false; }
+            }));
         }
-        else
+        catch { _workspaceTrustDialogPending = false; throw; }
+    }
+
+    private void OnWorkspaceTrustChanged()
+    {
+        Dispatcher.InvokeAsync(() =>
         {
-            var result = MessageBox.Show(this, $"この作業フォルダーの作成者と内容を信頼しますか？\n\n{workDir}\n\nプラグイン、保存フック、ターミナル、Git が有効になります。保存フックや Git 設定は、このユーザーの権限でプログラムを実行できます。信頼はこの起動中だけ有効です。", "作業フォルダーの信頼", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-            if (result != MessageBoxResult.Yes) return;
-            WorkspaceTrust.GrantFromNativeUi(workDir);
+            if (!_closed) workspaceTrustBar.Visibility = WorkspaceTrust.IsTrusted(AppEnvironment.GetWorkDir()) ? Visibility.Collapsed : Visibility.Visible;
+        });
+    }
+
+    internal void ApplyNativeTheme(NativeThemePalette palette)
+    {
+        if (_closed) return;
+        var colors = new (string Name, NativeRgba Color)[]
+        {
+            ("NativeBackground", palette.Background), ("NativeSurface", palette.Surface), ("NativeForeground", palette.Foreground),
+            ("NativeSecondaryForeground", palette.SecondaryForeground), ("NativeBorder", palette.Border), ("NativeHover", palette.Hover),
+            ("NativePressed", palette.Pressed), ("NativeFocus", palette.Focus),
+        };
+        foreach (var (name, color) in colors)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb(color.Alpha, color.Red, color.Green, color.Blue));
+            brush.Freeze();
+            Resources[name] = brush;
         }
-        var trusted = WorkspaceTrust.IsTrusted(workDir);
-        workspaceTrustButton.Content = trusted ? "信頼を解除" : "作業フォルダーを信頼…";
-        workspaceTrustStatus.Text = trusted ? "信頼済み：この起動中は作業フォルダーのコードを実行できます" : "制限モード：プラグイン・保存フック・ターミナル・Git は無効です";
     }
 
 	private async Task InitializeWebView2handler()
@@ -68,7 +119,7 @@ public partial class MainWindow : Window
 			return;
 		}
 		var consoleLogPath = AppEnvironment.GetConsoleLogPath();
-		var handler = await WebView2Handler.CreateAsync(Application.Current.Dispatcher, webView2, consoleLogPath);
+		var handler = await WebView2Handler.CreateAsync(Application.Current.Dispatcher, webView2, consoleLogPath, this);
 		if (_closed)
 		{
 			handler.Dispose();

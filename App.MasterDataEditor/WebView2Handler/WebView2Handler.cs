@@ -23,6 +23,8 @@ public class WebView2Handler : IDisposable
 
 	private readonly Dispatcher _dispatcher;
 	private readonly WebView2 _webView2;
+    // ヘッドレス検証には表示先がなく、信頼の確認画面も提供しない。
+    private readonly MainWindow? _mainWindow;
 	private readonly string _consoleLogPath;
 	private readonly TerminalHost _terminalHost;
 	private readonly CoreWebView2DevToolsProtocolEventReceiver _consoleReceiver;
@@ -42,10 +44,11 @@ public class WebView2Handler : IDisposable
 	/// </summary>
 	private EditorApiBridge _editorApiBridge = new();
 
-	public WebView2Handler(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath)
+	public WebView2Handler(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath, MainWindow? mainWindow)
 	{
 		_dispatcher = dispatcher;
 		_webView2 = webView2;
+        _mainWindow = mainWindow;
 		_consoleLogPath = consoleLogPath;
 		_terminalHost = new TerminalHost(SendTerminalMessageAsync);
 		WorkspaceTrust.Changed += OnWorkspaceTrustChanged;
@@ -154,7 +157,7 @@ public class WebView2Handler : IDisposable
 		}
 	}
 
-	public static async Task<WebView2Handler> CreateAsync(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath)
+	public static async Task<WebView2Handler> CreateAsync(Dispatcher dispatcher, WebView2 webView2, string consoleLogPath, MainWindow? mainWindow)
 	{
 		try
 		{
@@ -217,7 +220,7 @@ public class WebView2Handler : IDisposable
 			Logger.Error(ex, "WebView2初期化時にエラーが発生しました。");
 		}
 
-		return new WebView2Handler(dispatcher, webView2, consoleLogPath);
+		return new WebView2Handler(dispatcher, webView2, consoleLogPath, mainWindow);
 	}
 
 	/// <summary>
@@ -334,6 +337,25 @@ public class WebView2Handler : IDisposable
 
 					switch (messageType)
 					{
+						case "native_theme_changed":
+							_mainWindow?.ApplyNativeTheme(NativeThemePalette.Parse(root));
+							break;
+
+						case "workspace_trust_settings_request":
+							try
+							{
+								if (requestId.Length == 0 || requestId.Length > 128) throw new ArgumentException("リクエスト ID が不正です。");
+								if (_terminalNavigationPending) throw new InvalidOperationException("画面の遷移中は信頼設定を開けません。");
+								if (_mainWindow == null) throw new InvalidOperationException("ヘッドレス実行では信頼設定を開けません。");
+								_mainWindow.ScheduleWorkspaceTrustDialog();
+								SendMessageToWebView(new {type = "workspace_trust_settings_response", requestId, success = true});
+							}
+							catch (Exception error)
+							{
+								SendMessageToWebView(new {type = "workspace_trust_settings_response", requestId, success = false, error = error.Message});
+							}
+							break;
+
 						case "workspace_trust_request":
 							SendMessageToWebView(new {type = "workspace_trust_response", requestId, success = true, data = new {trusted = WorkspaceTrust.IsTrusted(AppEnvironment.GetWorkDir())}});
 							break;

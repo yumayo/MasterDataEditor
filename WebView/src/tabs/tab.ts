@@ -3369,7 +3369,7 @@ export class Tab {
             this.editor.appendChild(wrapper);
             this.settingsWrapperElement = wrapper;
 
-            this.settingsPanel = new SettingsPanel(tabButton);
+            this.settingsPanel = new SettingsPanel(tabButton, this.notification);
             this.settingsPanel.appendTo(wrapper);
         }
 

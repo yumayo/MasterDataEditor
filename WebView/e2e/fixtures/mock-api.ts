@@ -66,6 +66,8 @@ export async function installMockApiAsync(
             type MockApiWindow = {
                 __mockFs: MockFileSystem;
                 __mockApiRequests: string[];
+                __mockNativeThemes: unknown[];
+                __mockWorkspaceTrustSettingsRequests: unknown[];
                 __mockApiRequestDetails: Array<{
                     type: string;
                     filename: string | null;
@@ -181,6 +183,8 @@ export async function installMockApiAsync(
             // テストからMockFileSystemを参照可能にする（readMockFileAsync経由でアクセス）
             (window as unknown as MockApiWindow).__mockFs = runtimeFs;
             (window as unknown as MockApiWindow).__mockApiRequests = [];
+            (window as unknown as MockApiWindow).__mockNativeThemes = [];
+            (window as unknown as MockApiWindow).__mockWorkspaceTrustSettingsRequests = [];
             (window as unknown as MockApiWindow).__mockApiRequestDetails = [];
             persistMockFs();
 
@@ -199,6 +203,19 @@ export async function installMockApiAsync(
                 });
                 // リクエストIDをレスポンスにエコーバックする（並列リクエストの照合用）
                 const requestId = request.requestId as string | undefined;
+
+                // ネイティブのテーマ通知は値を記録するだけで、要求応答や信頼変更を行わない。
+                if (type === 'native_theme_changed') {
+                    (window as unknown as MockApiWindow).__mockNativeThemes.push(request);
+                    return;
+                }
+
+                // ネイティブ確認のキャンセルを再現し、成功応答だけでは信頼を変更しない。
+                if (type === 'workspace_trust_settings_request') {
+                    (window as unknown as MockApiWindow).__mockWorkspaceTrustSettingsRequests.push(request);
+                    dispatch({type: 'workspace_trust_settings_response', requestId, success: true, data: {}});
+                    return;
+                }
 
                 if (type === 'workspace_trust_request') {
                     const response = {type: 'workspace_trust_response', requestId, success: true, data: {trusted: workspaceTrust}};

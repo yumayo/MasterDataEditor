@@ -691,3 +691,8 @@ function serializeWriteFileData(data: WriteFileData): string {
 export function readWorkspaceTrustAsync(): Promise<{trusted: boolean}> {
     return postMessageAsync<{trusted: boolean}>('workspace_trust', {});
 }
+
+/** 確認画面を開く要求の受理だけを待つ。信頼の変更はネイティブの通知で反映する。 */
+export function openWorkspaceTrustSettingsAsync(): Promise<void> {
+    return postMessageAsync<void>('workspace_trust_settings', {});
+}
