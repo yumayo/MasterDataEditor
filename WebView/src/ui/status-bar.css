@@ -43,6 +43,26 @@
     align-items: center;
 }
 
+.status-bar-terminal {
+    height: 100%;
+    flex-shrink: 0;
+    border: 0;
+    padding: 0 8px;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+}
+
+.status-bar-terminal:hover {
+    background-color: var(--hover-color);
+}
+
+.status-bar-terminal:focus-visible {
+    outline: 1px solid var(--focus-border);
+    outline-offset: -1px;
+}
+
 /* バッジ内アイコン */
 .status-bar-badge-icon {
     display: flex;

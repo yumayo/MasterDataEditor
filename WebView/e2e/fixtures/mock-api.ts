@@ -192,6 +192,13 @@ export async function installMockApiAsync(
                 // リクエストIDをレスポンスにエコーバックする（並列リクエストの照合用）
                 const requestId = request.requestId as string | undefined;
 
+                // ターミナル専用fixtureが提供するハンドラーへ配信する。
+                if (type.startsWith('terminal_') && '__mockTerminalHandle' in window) {
+                    const terminalWindow = window as unknown as { __mockTerminalHandle(request: Record<string, unknown>, dispatch: (data: object) => void): void };
+                    terminalWindow.__mockTerminalHandle(request, dispatch);
+                    return;
+                }
+
                 // editor_api_request は C# → WebView の逆方向通信。
                 // ブリッジが addEventListener で登録したリスナーに配信する。
                 if (type === "editor_api_request") {

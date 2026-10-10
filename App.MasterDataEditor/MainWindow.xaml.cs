@@ -13,6 +13,7 @@ namespace App.MasterDataEditor;
 public partial class MainWindow : Window
 {
 	private WebView2Handler? _webView2Handler;
+	private bool _closed;
 
 	public MainWindow()
 	{
@@ -22,6 +23,15 @@ public partial class MainWindow : Window
 		WindowTitleBarTheme.Apply(this);
 		SourceInitialized += (_, _) => WindowPlacementManager.Restore(this);
 		Closing += (_, _) => WindowPlacementManager.Save(this);
+		Closed += (_, _) =>
+		{
+			_closed = true;
+			if (_webView2Handler != null)
+			{
+				_webView2Handler.Dispose();
+				webView2.Dispose();
+			}
+		};
 		Loaded += (_, _) => FocusWebView2();
 		Activated += (_, _) => FocusWebView2();
 		webView2.NavigationCompleted += OnWebView2NavigationCompleted;
@@ -34,8 +44,20 @@ public partial class MainWindow : Window
 
 	private async Task InitializeWebView2handler()
 	{
+		if (_closed)
+		{
+			webView2.Dispose();
+			return;
+		}
 		var consoleLogPath = AppEnvironment.GetConsoleLogPath();
-		_webView2Handler = await WebView2Handler.CreateAsync(Application.Current.Dispatcher, webView2, consoleLogPath);
+		var handler = await WebView2Handler.CreateAsync(Application.Current.Dispatcher, webView2, consoleLogPath);
+		if (_closed)
+		{
+			handler.Dispose();
+			webView2.Dispose();
+			return;
+		}
+		_webView2Handler = handler;
 
 		// EditorApiBridgeをWebView2Handlerに接続し、MCPツールからのAPI呼び出しを有効にする
 		((App)Application.Current).ConnectEditorApiBridge(_webView2Handler);

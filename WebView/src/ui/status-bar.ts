@@ -3,11 +3,13 @@ import type {NotificationToast} from "./notification";
 
 export interface StatusBarActions {
     toggleProblemsPanel(): void;
+    toggleTerminalPanel(): void;
 }
 
 export function createStatusBarActions(): StatusBarActions {
     return {
         toggleProblemsPanel() {},
+        toggleTerminalPanel() {},
     };
 }
 
@@ -15,6 +17,9 @@ export function bindStatusBarActions(actions: StatusBarActions, bottomPanel: Bot
     Object.assign(actions, {
         toggleProblemsPanel(): void {
             bottomPanel.toggleTab('problems');
+        },
+        toggleTerminalPanel(): void {
+            bottomPanel.toggleTab('terminal');
         },
     } satisfies StatusBarActions);
 }
@@ -45,6 +50,14 @@ function createStatusBarDom(notification: NotificationToast) {
     notificationSlot.classList.add('status-bar-notification-slot');
     notification.appendTo(notificationSlot);
     bar.appendChild(notificationSlot);
+
+    const terminalButton = document.createElement('button');
+    terminalButton.type = 'button';
+    terminalButton.className = 'status-bar-terminal';
+    terminalButton.textContent = '>_ TERMINAL';
+    terminalButton.setAttribute('aria-label', 'ターミナルを表示');
+    terminalButton.title = 'ターミナルを表示 / 非表示（Ctrl+`）';
+    bar.appendChild(terminalButton);
 
     // バックグラウンドタスクインジケーター（右寄り）
     const bgIndicator = document.createElement('div');
@@ -77,6 +90,7 @@ function createStatusBarDom(notification: NotificationToast) {
         backgroundIndicator: bgIndicator,
         backgroundCount: bgCountSpan,
         backgroundPopover: bgPopover,
+        terminalButton,
     };
 }
 
@@ -100,6 +114,7 @@ export class StatusBar {
     private readonly backgroundCount: HTMLElement;
     private readonly backgroundPopover: HTMLElement;
     private readonly actions: StatusBarActions;
+    private readonly terminalButton: HTMLButtonElement;
 
     constructor(actions: StatusBarActions, notification: NotificationToast) {
         const dom = createStatusBarDom(notification);
@@ -110,6 +125,7 @@ export class StatusBar {
         this.backgroundIndicator = dom.backgroundIndicator;
         this.backgroundCount = dom.backgroundCount;
         this.backgroundPopover = dom.backgroundPopover;
+        this.terminalButton = dom.terminalButton;
     }
 
     /**
@@ -149,6 +165,7 @@ export class StatusBar {
     }
 
     private attachEventHandlers(): void {
+        this.terminalButton.addEventListener('click', () => { this.actions.toggleTerminalPanel(); });
         this.badge.addEventListener('click', () => { this.toggleProblemsPanel(); });
         this.badge.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.toggleProblemsPanel();

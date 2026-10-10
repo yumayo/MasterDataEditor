@@ -1,4 +1,5 @@
 using App.MasterDataEditor.Mcp;
+using App.MasterDataEditor.Terminal;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -23,6 +24,10 @@ public class WebView2Handler : IDisposable
 	private readonly Dispatcher _dispatcher;
 	private readonly WebView2 _webView2;
 	private readonly string _consoleLogPath;
+	private readonly TerminalHost _terminalHost;
+	private readonly CoreWebView2DevToolsProtocolEventReceiver _consoleReceiver;
+	private int _disposed;
+	private bool _terminalNavigationPending;
 	private readonly IDisposable _fileWatcherHandle;
 	private readonly IDisposable _schemaWatcherHandle;
 	private readonly IDisposable _gitWatcherHandle;
@@ -42,11 +47,14 @@ public class WebView2Handler : IDisposable
 		_dispatcher = dispatcher;
 		_webView2 = webView2;
 		_consoleLogPath = consoleLogPath;
+		_terminalHost = new TerminalHost(SendTerminalMessageAsync);
 		_webView2.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+		_webView2.CoreWebView2.NavigationStarting += OnTerminalNavigationStarting;
+		_webView2.CoreWebView2.NavigationCompleted += OnTerminalNavigationCompleted;
 
 		// DevToolsProtocolを使ってconsole.logをキャプチャ
-		var receiver = _webView2.CoreWebView2.GetDevToolsProtocolEventReceiver("Runtime.consoleAPICalled");
-		receiver.DevToolsProtocolEventReceived += OnConsoleAPICalled;
+		_consoleReceiver = _webView2.CoreWebView2.GetDevToolsProtocolEventReceiver("Runtime.consoleAPICalled");
+		_consoleReceiver.DevToolsProtocolEventReceived += OnConsoleAPICalled;
 
 		// data/ ディレクトリのCSVファイル変更を監視し、WebViewに通知する
 		// ディレクトリが存在しない場合は NullDisposable で nullable を回避する
@@ -238,6 +246,12 @@ public class WebView2Handler : IDisposable
 
 	public void Dispose()
 	{
+		if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+		_webView2.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+		_webView2.CoreWebView2.NavigationStarting -= OnTerminalNavigationStarting;
+		_webView2.CoreWebView2.NavigationCompleted -= OnTerminalNavigationCompleted;
+		_consoleReceiver.DevToolsProtocolEventReceived -= OnConsoleAPICalled;
+		_terminalHost.Dispose();
 		_fileWatcherHandle.Dispose();
 		_schemaWatcherHandle.Dispose();
 		_gitWatcherHandle.Dispose();
@@ -250,6 +264,7 @@ public class WebView2Handler : IDisposable
 
 	private void SendMessageToWebView(object data, GitBlameTiming? timing)
 	{
+		if (Volatile.Read(ref _disposed) != 0) return;
 		string json;
 		var serializeStartedAt = Stopwatch.GetTimestamp();
 		try
@@ -265,6 +280,7 @@ public class WebView2Handler : IDisposable
 		var serializedAt = Stopwatch.GetTimestamp();
 		_dispatcher.InvokeAsync(() =>
 		{
+			if (Volatile.Read(ref _disposed) != 0) return;
 			try
 			{
 				var sendStartedAt = Stopwatch.GetTimestamp();
@@ -284,6 +300,7 @@ public class WebView2Handler : IDisposable
 
 	private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
 	{
+		if (Volatile.Read(ref _disposed) != 0) return;
 		try
 		{
 			string? messageJson;
@@ -322,6 +339,18 @@ public class WebView2Handler : IDisposable
 
 					switch (messageType)
 					{
+						case "terminal_output_ack":
+							if (!_terminalNavigationPending && IsTrustedTerminalSource(e.Source) && IsTrustedTerminalSource(_webView2.CoreWebView2.Source)) _terminalHost.HandleOutputAcknowledgement(root);
+							break;
+
+						case "terminal_start_request":
+						case "terminal_input_request":
+						case "terminal_resize_request":
+						case "terminal_close_request":
+							// 任意のページにシェルを公開しない。遷移中の旧ドキュメント要求も拒否する。
+							if (!_terminalNavigationPending && IsTrustedTerminalSource(e.Source) && IsTrustedTerminalSource(_webView2.CoreWebView2.Source)) _terminalHost.HandleRequest(root);
+							break;
+
 						case "read_file_request":
 							RunRequestInBackground(root, requestId, WebView2HandlerReadFileRequest.Invoke);
 							break;
@@ -399,6 +428,38 @@ public class WebView2Handler : IDisposable
 		{
 			Logger.Error(ex, "WebView2メッセージ処理時にエラーが発生しました。");
 		}
+	}
+
+	private void OnTerminalNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+	{
+		_terminalNavigationPending = true;
+		_terminalHost.ResetDocument();
+	}
+
+	private void OnTerminalNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+	{
+		_terminalNavigationPending = !e.IsSuccess || !IsTrustedTerminalSource(_webView2.CoreWebView2.Source);
+	}
+
+	private static bool IsTrustedTerminalSource(string source)
+	{
+		if (!Uri.TryCreate(source, UriKind.Absolute, out var uri)) return false;
+#if DEBUG
+		return uri.Scheme == "http" && uri.Host == "localhost" && uri.Port == AppEnvironment.GetDevPort();
+#else
+		return uri.Scheme == "https" && uri.Host == "app.local" && uri.Port == 443;
+#endif
+	}
+
+	private async Task SendTerminalMessageAsync(object message, CancellationToken token)
+	{
+		if (token.IsCancellationRequested || Volatile.Read(ref _disposed) != 0) return;
+		var json = JsonSerializer.Serialize(message, WebMessageJsonOptions);
+		await _dispatcher.InvokeAsync(() =>
+		{
+			if (token.IsCancellationRequested || Volatile.Read(ref _disposed) != 0) return;
+			_webView2.CoreWebView2.PostWebMessageAsString(json);
+		}, DispatcherPriority.Normal, token).Task.ConfigureAwait(false);
 	}
 
 	private void RunRequestInBackground(

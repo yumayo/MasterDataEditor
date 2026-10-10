@@ -6,7 +6,7 @@ import {parseTemporalValue} from '../core/export-window';
 import type {BranchCompareExportFilter} from '../diff/diff-build-result';
 
 export type UiActivityBarItem = 'files' | 'references' | 'search' | 'bookmarks' | 'calendar' | 'views' | 'sourceControl' | 'branchCompare' | 'history';
-export type UiBottomPanelTab = 'problems' | 'debug';
+export type UiBottomPanelTab = 'problems' | 'debug' | 'terminal';
 
 export interface UiSidebarState {
     width: number;
@@ -169,7 +169,7 @@ const MAX_CELL_INDEX = 1_000_000;
 const MAX_SCHEDULE_TIMELINE_COLLAPSED_DATES = 2_000;
 export const DEFAULT_ACTIVITY_BAR_ORDER: UiActivityBarItem[] = ['files', 'references', 'search', 'bookmarks', 'calendar', 'views', 'sourceControl', 'branchCompare', 'history'];
 const REMOVED_SPECIAL_TAB_NAMES = new Set(['ER Diagram']);
-const BOTTOM_PANEL_TABS: UiBottomPanelTab[] = ['problems', 'debug'];
+const BOTTOM_PANEL_TABS: UiBottomPanelTab[] = ['problems', 'debug', 'terminal'];
 const DEFAULT_SCROLL_POSITION: UiScrollPosition = {scrollLeft: 0, scrollTop: 0};
 const DEFAULT_SCHEDULE_TIMELINE_STATE: UiScheduleTimelineState = {
     collapsedDates: [],

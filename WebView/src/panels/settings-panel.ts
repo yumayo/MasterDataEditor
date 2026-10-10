@@ -419,6 +419,7 @@ export class SettingsPanel {
         this.undoStack = [];
         this.redoStack = [];
         this.documentKeydownHandler = (event: KeyboardEvent) => {
+            if (event.target instanceof Element && event.target.closest('.terminal-panel') !== null) return;
             if (!this.isVisible()) return;
             this.handleKeyDown(event);
         };

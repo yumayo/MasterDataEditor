@@ -28,6 +28,7 @@ import {bindStatusBarActions, createStatusBarActions, StatusBar} from "../ui/sta
 import {BackgroundTaskTracker} from "./background-task-tracker";
 import {DebugConsole} from "../panels/debug-console";
 import {BottomPanel} from "../panels/bottom-panel";
+import {TerminalPanel, isTerminalKeyboardTarget} from "../panels/terminal-panel";
 import {EditorApiImpl} from "../editor-api/editor-api";
 import {EditorApiBridge} from "../editor-api/editor-api-bridge";
 import {ErrorTooltip} from "../ui/error-tooltip";
@@ -138,7 +139,8 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     // StatusBar は起動直後にDOMだけ先行描画済み。
     // ここで PROBLEMS パネル操作に必要な BottomPanel を接続する。
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar, store, debugConsole, pluginValidationRunner);
-    const bottomPanel = new BottomPanel(validationPanel, debugConsole, uiStateStore);
+    const terminalPanel = new TerminalPanel(notification, document.body);
+    const bottomPanel = new BottomPanel(validationPanel, debugConsole, terminalPanel, uiStateStore);
     bindStatusBarActions(statusBarActions, bottomPanel);
 
     window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {
@@ -175,6 +177,13 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
 
     // グローバルキーボードショートカットを登録
     document.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.ctrlKey && !e.altKey && !e.shiftKey && e.code === 'Backquote') {
+            e.preventDefault();
+            e.stopPropagation();
+            bottomPanel.toggleTab('terminal');
+            return;
+        }
+        if (isTerminalKeyboardTarget(e.target)) return;
         const key = e.key.toLowerCase();
         const primaryModifier = e.ctrlKey || e.metaKey;
         if (primaryModifier && e.shiftKey && key === 'f') {
@@ -201,6 +210,7 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     // EditorTable 内にフォーカスがある場合は EditorTableHandler のバブリングハンドラに任せ、
     // それ以外（設定タブ、サイドバー、検索パネル等）はここで処理する。
     document.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (isTerminalKeyboardTarget(e.target)) return;
         const key = e.key.toLowerCase();
         if (e.ctrlKey && !e.shiftKey && key === 's') {
             const target = e.target as HTMLElement;
