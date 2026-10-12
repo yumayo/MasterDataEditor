@@ -64,6 +64,10 @@ function createStatusBarDom(notification: NotificationToast) {
     spinnerSpan.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><circle class="loading-spinner-track" cx="8" cy="8" r="5.5" pathLength="100"/><circle class="loading-spinner-arc" cx="8" cy="8" r="5.5" pathLength="100"/></svg>`;
     bgIndicator.appendChild(spinnerSpan);
 
+    const bgLabelSpan = document.createElement('span');
+    bgLabelSpan.classList.add('status-bar-background-label');
+    bgIndicator.appendChild(bgLabelSpan);
+
     const bgCountSpan = document.createElement('span');
     bgCountSpan.classList.add('status-bar-background-count');
     bgIndicator.appendChild(bgCountSpan);
@@ -88,6 +92,7 @@ function createStatusBarDom(notification: NotificationToast) {
         badge,
         badgeCount: countSpan,
         backgroundIndicator: bgIndicator,
+        backgroundLabel: bgLabelSpan,
         backgroundCount: bgCountSpan,
         backgroundPopover: bgPopover,
         terminalButton,
@@ -111,6 +116,7 @@ export class StatusBar {
     private readonly badge: HTMLElement;
     private readonly badgeCount: HTMLElement;
     private readonly backgroundIndicator: HTMLElement;
+    private readonly backgroundLabel: HTMLElement;
     private readonly backgroundCount: HTMLElement;
     private readonly backgroundPopover: HTMLElement;
     private readonly actions: StatusBarActions;
@@ -123,6 +129,7 @@ export class StatusBar {
         this.badge = dom.badge;
         this.badgeCount = dom.badgeCount;
         this.backgroundIndicator = dom.backgroundIndicator;
+        this.backgroundLabel = dom.backgroundLabel;
         this.backgroundCount = dom.backgroundCount;
         this.backgroundPopover = dom.backgroundPopover;
         this.terminalButton = dom.terminalButton;
@@ -145,12 +152,21 @@ export class StatusBar {
      */
     updateBackgroundTasks(tasks: ReadonlyMap<number, string>): void {
         const count = tasks.size;
+        const firstTask = tasks.values().next();
         this.renderPopoverContent(tasks);
-        if (count === 0) {
+        if (firstTask.done) {
             this.backgroundIndicator.style.visibility = 'hidden';
+            this.backgroundIndicator.setAttribute('aria-label', '実行中のバックグラウンド処理');
+            this.backgroundLabel.textContent = '';
+            this.backgroundLabel.removeAttribute('title');
+            this.backgroundCount.textContent = '';
             this.closeBackgroundPopover();
             return;
         }
+        // 開始順の先頭を表示し、完了したら次の未完了タスクへ切り替える。
+        this.backgroundLabel.textContent = firstTask.value;
+        this.backgroundLabel.title = firstTask.value;
+        this.backgroundIndicator.setAttribute('aria-label', `実行中のバックグラウンド処理 (${count}件): ${firstTask.value}`);
         this.backgroundIndicator.style.visibility = '';
         this.backgroundCount.textContent = String(count);
     }

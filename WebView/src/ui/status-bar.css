@@ -80,10 +80,13 @@
     height: 100%;
     display: flex;
     align-items: center;
-    justify-content: center;
     gap: 4px;
-    width: 48px;
-    flex-shrink: 0;
+    width: 320px;
+    /* 狭い画面では文字領域だけを縮め、スピナー・件数とTERMINALを残す */
+    min-width: 54px;
+    padding: 0 8px;
+    box-sizing: border-box;
+    flex-shrink: 1;
     cursor: pointer;
     position: relative;
 }
@@ -126,6 +129,15 @@
 
 @keyframes status-bar-spin {
     to { stroke-dashoffset: -100; }
+}
+
+/* タスク名だけを省略し、インジケーター上方のポップオーバーは切り取らない */
+.status-bar-background-label {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* タスク件数テキスト — 固定幅で数字が変わってもスピナーが動かない */
