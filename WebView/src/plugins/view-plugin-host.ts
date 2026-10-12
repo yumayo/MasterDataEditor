@@ -1,5 +1,6 @@
 import {findFilesAsync, readFileAsync, invalidatePluginFileCaches} from '../app/api';
 import {isWorkspaceTrusted, WORKSPACE_TRUST_CHANGED} from '../app/workspace-trust';
+import type {BackgroundTaskTracker} from '../app/background-task-tracker';
 import type {InMemoryTableStore} from '../data/in-memory-table-store';
 import type {EditorAPI as InternalEditorAPI} from '../editor-api/editor-api-types';
 import type {NotificationToast} from '../ui/notification';
@@ -15,6 +16,7 @@ export interface ViewPluginMountOptions {onDirtyChanged?(dirty: boolean): void;}
 export class ViewPluginHost {
     private readonly store: InMemoryTableStore;
     private readonly notification: NotificationToast;
+    private readonly backgroundTaskTracker: BackgroundTaskTracker;
     private readonly registrations = new Map<string, {descriptor: ViewPluginDescriptor; code: string}>();
     private readonly listeners: Array<() => void> = [];
     private readonly loadedListeners: Array<() => void> = [];
@@ -23,8 +25,9 @@ export class ViewPluginHost {
     private loaded = false;
     private generation = 0;
 
-    constructor(editorApi: InternalEditorAPI, store: InMemoryTableStore, notification: NotificationToast) {
+    constructor(editorApi: InternalEditorAPI, store: InMemoryTableStore, notification: NotificationToast, backgroundTaskTracker: BackgroundTaskTracker) {
         this.notification = notification;
+        this.backgroundTaskTracker = backgroundTaskTracker;
         this.store = store;
         const editor = {data: editorApi.data, schema: editorApi.schema, edit: editorApi.edit, events: editorApi.events};
         this.api = {...editor, editor, tables: new ViewPluginTablesApiImpl(store, editorApi), notification: {show: (message, status) => notification.show(message, status)}};
@@ -87,7 +90,8 @@ export class ViewPluginHost {
         container.textContent = '';
         const frame = new ViewPluginFrame(container, plugin.code, id, this.api, this.store, this.notification, options);
         this.frames.add(frame);
-        void frame.waitUntilReadyAsync().catch(() => { frame.dispose(); this.frames.delete(frame); });
+        // 初期データ同期と非同期 render の完了まで追跡し、失敗・タブ破棄でも同じ Promise の決着で終了する。
+        void this.backgroundTaskTracker.trackActivityAsync('プラグイン読み込み中: ' + plugin.descriptor.title, frame.waitUntilReadyAsync()).catch(() => { frame.dispose(); this.frames.delete(frame); });
         return {dispose: () => { frame.dispose(); this.frames.delete(frame); }, saveAsync: () => frame.saveAsync(), isDirty: () => frame.isDirty(), setDirty: value => frame.setDirty(value)};
     }
 

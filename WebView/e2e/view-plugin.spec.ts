@@ -117,6 +117,41 @@ function createViewPluginFileSystem(): MockFileSystem {
     };
 }
 
+/** 通信が終わっても render 自体が完了しない状態を、ユーザー操作で決着させる。 */
+function createPendingViewPlugin(id: string, title: string): string {
+    return `window.masterDataEditor.registerViewPlugin({
+        id: ${JSON.stringify(id)}, apiVersion: 2, title: ${JSON.stringify(title)},
+        async render(container) {
+            const state = document.createElement('div');
+            state.className = 'plugin-loading-state';
+            state.textContent = '読み込み待機中';
+            const complete = document.createElement('button');
+            complete.className = 'plugin-complete-loading';
+            complete.textContent = '読み込みを完了';
+            const fail = document.createElement('button');
+            fail.className = 'plugin-fail-loading';
+            fail.textContent = '読み込みを失敗';
+            container.append(state, complete, fail);
+            await new Promise((resolve, reject) => {
+                complete.addEventListener('click', () => resolve(), {once: true});
+                fail.addEventListener('click', function failPluginLoading() { reject(new Error('PLUGIN_RENDER_FAILED')); }, {once: true});
+            });
+            state.textContent = '読み込み完了';
+        }
+    });`;
+}
+
+async function openPendingViewPluginAsync(page: Page): Promise<void> {
+    const fs = createViewPluginFileSystem();
+    fs['plugins/views/summary.js'] = createPendingViewPlugin('summary', 'Summary View');
+    fs['plugins/views/legacy.js'] = createPendingViewPlugin('legacy', 'Legacy View');
+    await installMockApiAsync(page, fs, true);
+    await page.goto('/');
+    await openViewPluginPanelAsync(page);
+    await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
+    await expect(page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe').locator('.plugin-loading-state')).toHaveText('読み込み待機中');
+}
+
 async function openViewPluginPanelAsync(page: Page): Promise<void> {
     await page.locator('.activity-bar-item[data-panel="views"]').click();
     await expect(page.locator('.view-plugin-panel')).toBeVisible();
@@ -150,6 +185,92 @@ async function waitForSavedViewTabAsync(page: Page): Promise<void> {
 }
 
 test.describe('Viewプラグイン', () => {
+    test('プラグインの読み込み中は右下にバックグラウンドの進行と名前を表示する', async ({page}) => {
+        await openPendingViewPluginAsync(page);
+
+        const indicator = page.getByRole('button', {name: '実行中のバックグラウンド処理'});
+        await expect(indicator).toBeVisible();
+        await expect(indicator.locator('.status-bar-background-spinner')).toBeVisible();
+        await expect(indicator.locator('.status-bar-background-count')).toHaveText('1');
+        await indicator.click();
+        await expect(page.locator('.status-bar-background-popover')).toBeVisible();
+        await expect(page.locator('.status-bar-background-popover-item')).toHaveText(['プラグイン読み込み中: Summary View']);
+        // 待機中のまま終え、autoDump に右下のスピナーとタスク名の見た目を残す。
+    });
+
+    test('プラグインの読み込みが完了するとバックグラウンドの進行が消える', async ({page}) => {
+        await openPendingViewPluginAsync(page);
+        const indicator = page.locator('.status-bar-background-indicator');
+        await expect(indicator).toBeVisible();
+        await indicator.click();
+        await expect(page.locator('.status-bar-background-popover-item')).toHaveText(['プラグイン読み込み中: Summary View']);
+
+        const view = page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe');
+        await view.locator('.plugin-complete-loading').click();
+
+        await expect(view.locator('.plugin-loading-state')).toHaveText('読み込み完了');
+        await expect(indicator).toBeHidden();
+        await expect(page.locator('.status-bar-background-popover')).toBeHidden();
+        await expect(page.locator('.status-bar-background-popover-item')).toHaveCount(0);
+    });
+
+    test('プラグインの読み込みに失敗するとエラー通知を出してバックグラウンドの進行を終了する', async ({page}) => {
+        await openPendingViewPluginAsync(page);
+        const indicator = page.locator('.status-bar-background-indicator');
+        await expect(indicator).toBeVisible();
+        await expect(indicator.locator('.status-bar-background-count')).toHaveText('1');
+
+        await page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe').locator('.plugin-fail-loading').click();
+
+        await expect(page.locator('.notification-toast-error')).toContainText('Viewプラグインの実行に失敗しました');
+        await expect(page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe')).toHaveCount(0);
+        await expect(indicator).toBeHidden();
+        await expect(page.locator('.status-bar-background-popover-item')).toHaveCount(0);
+
+        const errorEntry = page.locator('.debug-console-row-error', {has: page.locator('.debug-console-col-label', {hasText: /^Viewプラグインの実行に失敗しました$/})});
+        await expect(errorEntry).toHaveCount(1);
+        await page.locator('.status-bar-badge').click();
+        await page.locator('.bottom-panel-tab', {hasText: 'DEBUG CONSOLE'}).click();
+        await errorEntry.click();
+        const stack = page.locator('.debug-api-detail-stack-trace .debug-api-detail-code');
+        await expect(stack).toContainText('Error: PLUGIN_RENDER_FAILED');
+        await expect(stack).toContainText('failPluginLoading');
+        await expect(page.locator('.debug-console-row-error', {has: page.locator('.debug-console-col-label', {hasText: /^プラグイン読み込み中: Summary View$/})})).toHaveCount(0);
+    });
+
+    test('読み込み中のViewを閉じて開き直しても別Viewのバックグラウンド処理を維持する', async ({page}) => {
+        await openPendingViewPluginAsync(page);
+        await page.locator('.view-plugin-item[data-plugin-id="legacy"]').click();
+        const legacy = page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="legacy"] iframe');
+        await expect(legacy.locator('.plugin-loading-state')).toHaveText('読み込み待機中');
+        const indicator = page.locator('.status-bar-background-indicator');
+        await expect(indicator.locator('.status-bar-background-count')).toHaveText('2');
+        await indicator.click();
+        await expect(page.locator('.status-bar-background-popover-item')).toHaveText(['プラグイン読み込み中: Summary View', 'プラグイン読み込み中: Legacy View']);
+
+        await page.locator('.tab-button').filter({has: page.locator('.tab-button-name', {hasText: /^View: Summary View$/})}).locator('.tab-button-close').click();
+        await expect(page.locator('.view-plugin-tab-root[data-view-plugin-id="summary"]')).toHaveCount(0);
+        await expect(indicator).toBeVisible();
+        await expect(indicator.locator('.status-bar-background-count')).toHaveText('1');
+        await expect(page.locator('.status-bar-background-popover-item')).toHaveText(['プラグイン読み込み中: Legacy View']);
+
+        await page.locator('.view-plugin-item[data-plugin-id="summary"]').click();
+        const summary = page.frameLocator('.view-plugin-tab-root[data-view-plugin-id="summary"] iframe');
+        await expect(summary.locator('.plugin-loading-state')).toHaveText('読み込み待機中');
+        await expect(indicator.locator('.status-bar-background-count')).toHaveText('2');
+        await summary.locator('.plugin-complete-loading').click();
+        await expect(summary.locator('.plugin-loading-state')).toHaveText('読み込み完了');
+        await expect(indicator).toBeVisible();
+        await expect(indicator.locator('.status-bar-background-count')).toHaveText('1');
+        await expect(page.locator('.status-bar-background-popover-item')).toHaveText(['プラグイン読み込み中: Legacy View']);
+
+        await page.locator('.view-plugin-item[data-plugin-id="legacy"]').click();
+        await legacy.locator('.plugin-complete-loading').click();
+        await expect(legacy.locator('.plugin-loading-state')).toHaveText('読み込み完了');
+        await expect(indicator).toBeHidden();
+        await expect(page.locator('.status-bar-background-popover-item')).toHaveCount(0);
+    });
+
     for (const unavailable of ['削除済み', '登録失敗']) {
         test('保存済みのアクティブViewが' + unavailable + 'なら起動時に通常テーブルを表示する', async ({page}) => {
             const fs = createViewPluginFileSystem();

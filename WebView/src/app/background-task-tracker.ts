@@ -6,9 +6,9 @@ import type {GitBlameTiming} from "./git-blame-timing";
 /**
  * バックグラウンドタスクの追跡
  *
- * 非同期処理をラップして実行中のタスク数・ラベルを StatusBar に通知し、
- * 完了後の経過時間と成否を DebugConsole に記録する。
- * api.ts の postMessageAsync から使われ、C# との通信全体を追跡する。
+ * 非同期処理をラップして実行中のタスク数・ラベルを StatusBar に通知する。
+ * API通信の追跡では経過時間と成否も DebugConsole に記録し、
+ * 通知元が記録を担う処理では進行表示だけを管理する。
  */
 export class BackgroundTaskTracker {
     private readonly tasks: Map<number, string>;
@@ -26,6 +26,19 @@ export class BackgroundTaskTracker {
     /** parseCallerInfo でスキップするフレームパターン（自身のファイル名 + api + 共通モジュール） */
     private static readonly SKIP_PATTERNS: ReadonlyArray<string> = ['background-task-tracker', '/api.', 'caller-info'];
 
+    /** 通知・ログは呼び出し側に任せ、成功・失敗・破棄の決着まで進行表示だけを管理する。 */
+    async trackActivityAsync<T>(label: string, promise: Promise<T>): Promise<T> {
+        const id = this.nextId++;
+        this.tasks.set(id, label);
+        this.statusBar.updateBackgroundTasks(this.tasks);
+        try {
+            return await promise;
+        } finally {
+            this.tasks.delete(id);
+            this.statusBar.updateBackgroundTasks(this.tasks);
+        }
+    }
+
     /**
      * 非同期処理をラップしてタスクを追跡する。
      * 処理開始時にラベルを登録し、完了時（成功・失敗問わず）に削除する。
@@ -34,12 +47,9 @@ export class BackgroundTaskTracker {
     async trackAsync<T>(label: string, promise: Promise<T>, detail?: DebugConsoleEntryDetail): Promise<T> {
         // await 前にスタックを取得しないと呼び出し元情報が消える
         const caller = parseCallerInfo(BackgroundTaskTracker.SKIP_PATTERNS);
-        const id = this.nextId++;
         const startTime = performance.now();
-        this.tasks.set(id, label);
-        this.statusBar.updateBackgroundTasks(this.tasks);
         try {
-            const result = await promise;
+            const result = await this.trackActivityAsync(label, promise);
             const elapsedUs = Math.round((performance.now() - startTime) * 1000);
             this.debugConsole.appendEntry(detail?.apiName ?? label, elapsedUs, 'success', caller, this.completeDetail(detail, 'success', caller, elapsedUs));
             return result;
@@ -51,9 +61,6 @@ export class BackgroundTaskTracker {
             }
             this.debugConsole.appendEntry(detail?.apiName ?? label, elapsedUs, 'error', caller, completedDetail);
             throw e;
-        } finally {
-            this.tasks.delete(id);
-            this.statusBar.updateBackgroundTasks(this.tasks);
         }
     }
 

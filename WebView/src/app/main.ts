@@ -107,7 +107,7 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     tab.connectEditorApi(editorApi);
     (window as unknown as Record<string, unknown>)['editorApi'] = editorApi;
 
-    const viewPluginHost = new ViewPluginHost(editorApi, store, notification);
+    const viewPluginHost = new ViewPluginHost(editorApi, store, notification, backgroundTaskTracker);
     tab.connectViewPluginHost(viewPluginHost);
     window.addEventListener(WORKSPACE_TRUST_CHANGED, () => {
         if (!isWorkspaceTrusted()) tab.reloadViewPluginTabs();
