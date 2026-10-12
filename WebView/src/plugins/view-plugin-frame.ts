@@ -4,6 +4,7 @@ import type {NotificationToast} from '../ui/notification';
 import {isWorkspaceTrusted} from '../app/workspace-trust';
 import {runViewPluginSandbox} from './view-plugin-sandbox-runtime';
 import type {ViewPluginDescriptor, ViewPluginMountOptions} from './view-plugin-host';
+import scrollbarStyles from '../styles/scrollbar.css?inline';
 
 type RpcMethod = (...args: unknown[]) => unknown;
 
@@ -55,8 +56,9 @@ export class ViewPluginFrame {
         this.frame.setAttribute('sandbox', 'allow-scripts');
         this.frame.referrerPolicy = 'no-referrer';
         this.frame.style.cssText = 'border:0;width:100%;height:100%;display:block;min-height:0';
+        // 親画面のCSSはiframeへ継承されないため、共通スクロールバーを埋め込む。
         // 同一 origin、外部通信、子 frame、フォーム、ポップアップ、トップ遷移を一切許可しない。
-        this.frame.srcdoc = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' \'unsafe-eval\'; style-src \'unsafe-inline\'; img-src data:; connect-src \'none\'; frame-src \'none\'; child-src \'none\'; worker-src \'none\'; object-src \'none\'; form-action \'none\'; base-uri \'none\'"><style>html,body{margin:0;height:100%;font:13px sans-serif;color:var(--font-color);background:var(--background-color)}body{box-sizing:border-box;padding:12px}button,input,select{font:inherit}.view-plugin-sandbox-root{min-height:100%;box-sizing:border-box}</style></head><body><script>(' + runViewPluginSandbox.toString().replace(/<\/script/gi, '<\\/script') + ')();</script></body></html>';
+        this.frame.srcdoc = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' \'unsafe-eval\'; style-src \'unsafe-inline\'; img-src data:; connect-src \'none\'; frame-src \'none\'; child-src \'none\'; worker-src \'none\'; object-src \'none\'; form-action \'none\'; base-uri \'none\'"><style>' + scrollbarStyles + 'html,body{margin:0;height:100%;font:13px sans-serif;color:var(--font-color);background:var(--background-color)}body{box-sizing:border-box;padding:12px}button,input,select{font:inherit}.view-plugin-sandbox-root{min-height:100%;box-sizing:border-box}</style></head><body><script>(' + runViewPluginSandbox.toString().replace(/<\/script/gi, '<\\/script') + ')();</script></body></html>';
         for (const [namespace, names] of [
             ['data', ['readTableDataAsync', 'getReferenceItemsAsync', 'getReferenceDisplayTextAsync', 'getReferenceHintsAsync', 'getRelatedTablesAsync', 'getValidationErrorsAsync', 'searchCellsAsync']],
             ['edit', ['setCellValueAsync', 'setCellValuesAsync', 'openTableAsync', 'saveTableAsync']],
