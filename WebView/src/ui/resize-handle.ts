@@ -9,19 +9,67 @@
  */
 export class ResizeHandle {
     private readonly element: HTMLElement;
-    private readonly direction: 'horizontal' | 'vertical';
-    private readonly onResize: (delta: number) => number;
     /** 二重ドラッグ防止フラグ（全インスタンス共有） */
     private static dragging = false;
 
     constructor(direction: 'horizontal' | 'vertical', onResize: (delta: number) => number) {
-        this.direction = direction;
-        this.onResize = onResize;
-
         const el = document.createElement('div');
         el.classList.add('resize-handle');
         el.setAttribute('data-direction', direction);
-        el.addEventListener('mousedown', (e: MouseEvent) => { this.onMouseDown(e); });
+        el.addEventListener('pointerdown', (event: PointerEvent) => {
+            // 左ボタンの主ポインターだけが、全ハンドルで一つのドラッグを所有する。
+            if (event.button !== 0 || !event.isPrimary || ResizeHandle.dragging) return;
+            event.stopPropagation();
+            event.preventDefault();
+
+            // iframeへ入っても親documentへ移動と解放が届くよう、開始要素が捕捉する。
+            // 捕捉できなかった場合に、共有フラグやbodyの操作状態を残さない。
+            const pointerId = event.pointerId;
+            el.setPointerCapture(pointerId);
+            ResizeHandle.dragging = true;
+            const previousCursor = document.body.style.cursor;
+            const previousUserSelect = document.body.style.userSelect;
+            document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize';
+            document.body.style.userSelect = 'none';
+
+            let active = true;
+            let prevCoord = direction === 'horizontal' ? event.clientX : event.clientY;
+            const finishDrag = () => {
+                if (!active) return;
+                active = false;
+                document.removeEventListener('pointermove', onPointerMove);
+                document.removeEventListener('pointerup', onPointerEnd);
+                document.removeEventListener('pointercancel', onPointerEnd);
+                document.removeEventListener('lostpointercapture', onPointerEnd);
+                window.removeEventListener('blur', finishDrag);
+                document.body.style.cursor = previousCursor;
+                document.body.style.userSelect = previousUserSelect;
+                ResizeHandle.dragging = false;
+                if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
+            };
+            const onPointerMove = (moveEvent: PointerEvent) => {
+                if (moveEvent.pointerId !== pointerId) return;
+                // 左ボタンだけ先に離した場合も、別ボタンの解放を待たず終了する。
+                if ((moveEvent.buttons & 1) === 0) {
+                    finishDrag();
+                    return;
+                }
+                const currentCoord = direction === 'horizontal' ? moveEvent.clientX : moveEvent.clientY;
+                const delta = currentCoord - prevCoord;
+                // クランプで消費しなかった分は進めず、逆方向で超過分を解消させる。
+                prevCoord += onResize(delta);
+            };
+            const onPointerEnd = (endEvent: PointerEvent) => {
+                if (endEvent.pointerId === pointerId) finishDrag();
+            };
+
+            // 要素が除去された場合のlostpointercaptureもdocumentで受け取る。
+            document.addEventListener('pointermove', onPointerMove);
+            document.addEventListener('pointerup', onPointerEnd);
+            document.addEventListener('pointercancel', onPointerEnd);
+            document.addEventListener('lostpointercapture', onPointerEnd);
+            window.addEventListener('blur', finishDrag);
+        });
         this.element = el;
     }
 
@@ -37,43 +85,5 @@ export class ResizeHandle {
      */
     prependTo(parent: HTMLElement): void {
         parent.prepend(this.element);
-    }
-
-    private onMouseDown(e: MouseEvent): void {
-        // 別のResizeHandleがドラッグ中なら無視する（二重ドラッグ防止）
-        if (ResizeHandle.dragging) return;
-        ResizeHandle.dragging = true;
-
-        // SelectionDragController との競合を防ぐ
-        e.stopPropagation();
-        e.preventDefault();
-
-        const cursor = this.direction === 'horizontal' ? 'col-resize' : 'row-resize';
-        document.body.style.cursor = cursor;
-        document.body.style.userSelect = 'none';
-
-        // 差分方式: 前フレームの座標を保持し、フレームごとの差分を onResize に渡す
-        let prevCoord = this.direction === 'horizontal' ? e.clientX : e.clientY;
-
-        const onMouseMove = (moveEvent: MouseEvent) => {
-            const currentCoord = this.direction === 'horizontal' ? moveEvent.clientX : moveEvent.clientY;
-            const delta = currentCoord - prevCoord;
-            // onResize が返す消費deltaだけ prevCoord を進める。
-            // クランプで実際に動かなかった分は prevCoord に反映されないため、
-            // 逆方向に戻すときに超過分を解消するまでリサイズが始まらない。
-            const consumedDelta = this.onResize(delta);
-            prevCoord += consumedDelta;
-        };
-
-        const onMouseUp = () => {
-            ResizeHandle.dragging = false;
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-        };
-
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
     }
 }
