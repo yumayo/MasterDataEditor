@@ -88,7 +88,7 @@ test.describe('Notification', () => {
             const count = document.querySelector<HTMLElement>('.status-bar-background-count');
             if (indicator === null || count === null) throw new Error('バックグラウンド処理インジケーターが見つかりません');
             count.textContent = '1';
-            indicator.style.display = '';
+            indicator.style.visibility = '';
         });
         await expect(page.locator('.status-bar-background-indicator')).toBeVisible();
 

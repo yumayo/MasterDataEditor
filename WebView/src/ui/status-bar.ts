@@ -51,21 +51,13 @@ function createStatusBarDom(notification: NotificationToast) {
     notification.appendTo(notificationSlot);
     bar.appendChild(notificationSlot);
 
-    const terminalButton = document.createElement('button');
-    terminalButton.type = 'button';
-    terminalButton.className = 'status-bar-terminal';
-    terminalButton.textContent = '>_ TERMINAL';
-    terminalButton.setAttribute('aria-label', 'ターミナルを表示');
-    terminalButton.title = 'ターミナルを表示 / 非表示（Ctrl+`）';
-    bar.appendChild(terminalButton);
-
-    // バックグラウンドタスクインジケーター（右寄り）
+    // バックグラウンドタスクインジケーター（TERMINALの左隣に固定領域を確保）
     const bgIndicator = document.createElement('div');
     bgIndicator.classList.add('status-bar-background-indicator');
     bgIndicator.setAttribute('role', 'button');
     bgIndicator.setAttribute('tabindex', '0');
     bgIndicator.setAttribute('aria-label', '実行中のバックグラウンド処理');
-    bgIndicator.style.display = 'none';
+    bgIndicator.style.visibility = 'hidden';
 
     const spinnerSpan = document.createElement('span');
     spinnerSpan.classList.add('status-bar-background-spinner');
@@ -83,6 +75,14 @@ function createStatusBarDom(notification: NotificationToast) {
     bgIndicator.appendChild(bgPopover);
     bar.appendChild(bgIndicator);
 
+    const terminalButton = document.createElement('button');
+    terminalButton.type = 'button';
+    terminalButton.className = 'status-bar-terminal';
+    terminalButton.textContent = '>_ TERMINAL';
+    terminalButton.setAttribute('aria-label', 'ターミナルを表示');
+    terminalButton.title = 'ターミナルを表示 / 非表示（Ctrl+`）';
+    bar.appendChild(terminalButton);
+
     return {
         element: bar,
         badge,
@@ -99,7 +99,7 @@ function createStatusBarDom(notification: NotificationToast) {
  *
  * 画面最下部に常時表示される。
  * 左端: エラー件数バッジ（クリックでBottomPanelのPROBLEMSタブをトグル）
- * 右寄り: バックグラウンドタスクインジケーター（実行中タスクがある場合のみ表示、クリックでタスク一覧ポップオーバー）
+ * TERMINALの左隣: バックグラウンドタスク用の固定領域（実行中のみ表示、クリックでタスク一覧ポップオーバー）
  * エラー0件でも "0" を表示する。
  *
  * constructor は固定DOMと action port を初期化する。BottomPanel 操作用の action port は
@@ -141,17 +141,17 @@ export class StatusBar {
     /**
      * バックグラウンドタスク一覧を更新する。
      * BackgroundTaskTracker から呼ばれる。
-     * タスクが0件になった場合はインジケーターを非表示にする。
+     * タスクが0件になった場合も領域を維持し、インジケーターだけを非表示にする。
      */
     updateBackgroundTasks(tasks: ReadonlyMap<number, string>): void {
         const count = tasks.size;
         this.renderPopoverContent(tasks);
         if (count === 0) {
-            this.backgroundIndicator.style.display = 'none';
+            this.backgroundIndicator.style.visibility = 'hidden';
             this.closeBackgroundPopover();
             return;
         }
-        this.backgroundIndicator.style.display = '';
+        this.backgroundIndicator.style.visibility = '';
         this.backgroundCount.textContent = String(count);
     }
 
