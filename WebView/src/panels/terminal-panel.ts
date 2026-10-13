@@ -283,6 +283,33 @@ export class TerminalPanel {
     private ensureOpened(): void {
         if (!this.opened) {
             this.terminal.open(this.host);
+            if (this.kind === 'ai') {
+                const terminalElement = this.terminal.element;
+                if (!(terminalElement instanceof HTMLElement)) throw new Error('AIターミナルが初期化されていません');
+                const screen = this.host.querySelector<HTMLElement>('.xterm-screen');
+                if (screen === null) throw new Error('AIターミナルの文字領域が初期化されていません');
+                // AIの回答は通常の左ドラッグで選択する。スクロールバーは文字領域の外なので対象にしない。
+                // 追跡モード中だけxterm標準のShift選択へ渡し、選択あり右クリックのコピーも維持する。
+                screen.addEventListener('mousedown', event => {
+                    if (event.shiftKey || this.terminal.modes.mouseTrackingMode === 'none') return;
+                    if (event.button !== 0 && !(event.button === 2 && this.terminal.hasSelection())) return;
+                    const target = event.target;
+                    if (!(target instanceof Element)) return;
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    target.dispatchEvent(new MouseEvent(event.type, {
+                        bubbles: event.bubbles, cancelable: event.cancelable, composed: event.composed,
+                        view: event.view, detail: event.detail, screenX: event.screenX, screenY: event.screenY,
+                        clientX: event.clientX, clientY: event.clientY, button: event.button, buttons: event.buttons,
+                        ctrlKey: event.ctrlKey, altKey: event.altKey, metaKey: event.metaKey, shiftKey: true, relatedTarget: event.relatedTarget,
+                    }));
+                }, true);
+                // 子のリンク処理を通し、端末ルートの余白も含めて選択を消すANYホバー報告を止める。
+                // open直後・プロセス起動前に登録するため、出力でANY追跡が有効化されてから付くxtermの報告ハンドラより先に動く。
+                terminalElement.addEventListener('mousemove', event => {
+                    if (event.buttons === 0 && this.terminal.modes.mouseTrackingMode === 'any' && this.terminal.hasSelection()) event.stopImmediatePropagation();
+                });
+            }
             this.opened = true;
         }
         if (this.host.clientWidth > 0 && this.host.clientHeight > 0) this.fitAddon.fit();
