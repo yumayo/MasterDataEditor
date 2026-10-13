@@ -28,7 +28,7 @@ import {bindStatusBarActions, createStatusBarActions, StatusBar} from "../ui/sta
 import {BackgroundTaskTracker} from "./background-task-tracker";
 import {DebugConsole} from "../panels/debug-console";
 import {BottomPanel} from "../panels/bottom-panel";
-import {TerminalPanel, isTerminalKeyboardTarget} from "../panels/terminal-panel";
+import {isTerminalKeyboardTarget} from "../panels/terminal-panel";
 import {EditorApiImpl} from "../editor-api/editor-api";
 import {EditorApiBridge} from "../editor-api/editor-api-bridge";
 import {ErrorTooltip} from "../ui/error-tooltip";
@@ -145,9 +145,7 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     // StatusBar は起動直後にDOMだけ先行描画済み。
     // ここで PROBLEMS パネル操作に必要な BottomPanel を接続する。
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar, store, debugConsole, pluginValidationRunner);
-    const terminalPanel = new TerminalPanel(notification, document.body, 'terminal');
-    const aiPanel = new TerminalPanel(notification, document.body, 'ai');
-    const bottomPanel = new BottomPanel(validationPanel, debugConsole, terminalPanel, aiPanel, uiStateStore);
+    const bottomPanel = new BottomPanel(validationPanel, debugConsole, notification, document.body, uiStateStore);
     bindStatusBarActions(statusBarActions, bottomPanel);
 
     window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {

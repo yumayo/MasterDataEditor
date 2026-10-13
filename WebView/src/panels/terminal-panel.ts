@@ -2,6 +2,7 @@ import {isWorkspaceTrusted} from "../app/workspace-trust";
 import {Terminal} from '@xterm/xterm';
 import {FitAddon} from '@xterm/addon-fit';
 import type {NotificationToast} from '../ui/notification';
+import type {BottomPanel} from './bottom-panel';
 import '@xterm/xterm/css/xterm.css';
 import './terminal-panel.css';
 
@@ -30,6 +31,7 @@ export function isTerminalKeyboardTarget(target: EventTarget | null): boolean {
  */
 export class TerminalPanel {
     private readonly kind: 'terminal' | 'ai';
+    private readonly bottomPanel: BottomPanel;
     private readonly element: HTMLElement;
     private readonly host: HTMLElement;
     private readonly status: HTMLElement;
@@ -51,8 +53,9 @@ export class TerminalPanel {
     private outbound: Promise<void> = Promise.resolve();
     private previousFocus: HTMLElement;
 
-    constructor(notification: NotificationToast, themeRoot: HTMLElement, kind: 'terminal' | 'ai') {
+    constructor(notification: NotificationToast, themeRoot: HTMLElement, kind: 'terminal' | 'ai', bottomPanel: BottomPanel) {
         this.kind = kind;
+        this.bottomPanel = bottomPanel;
         const prefix = kind === 'ai' ? 'ai-terminal' : 'terminal';
         this.notification = notification;
         this.themeRoot = themeRoot;
@@ -82,12 +85,18 @@ export class TerminalPanel {
             if (this.state.kind !== 'running') return;
             const sessionId = this.state.sessionId;
             this.state = {kind: 'closing', sessionId};
+            // 無効化される終了ボタンから先に移し、完了時のsetVisibleが元のフォーカスを復元できるようにする。
+            if (this.element.ownerDocument.activeElement === this.closeButton) this.terminal.focus();
             this.renderState();
             try {
                 await this.requestAsync('close', sessionId, {});
                 if (this.disposed || this.state.sessionId !== sessionId || this.state.kind !== 'closing') return;
-                this.state = {kind: 'exited', sessionId, exitCode: 0};
-                this.renderState();
+                if (this.kind === 'ai') {
+                    this.completeAiSession();
+                } else {
+                    this.state = {kind: 'exited', sessionId, exitCode: 0};
+                    this.renderState();
+                }
             } catch (error) {
                 if (this.disposed || this.state.sessionId !== sessionId || this.state.kind !== 'closing') return;
                 // 終了失敗では既存セッションを保持し、終了操作をやり直せるようにする。
@@ -184,6 +193,11 @@ export class TerminalPanel {
             const sessionId = this.state.sessionId;
             // close応答とプロセス監視の順序に関係なく、実際の終了コードを表示する。
             if (message.type === 'terminal_exit' && typeof data['exitCode'] === 'number') {
+                // Ctrl+C入力だけでは終了とみなさず、実プロセスの正常終了または既知の中断コードを待つ。
+                if (this.kind === 'ai' && (this.state.kind === 'closing' || data['exitCode'] === 0 || data['exitCode'] === 130 || data['exitCode'] === -1073741510)) {
+                    this.completeAiSession();
+                    return;
+                }
                 if (this.kind === 'ai' && this.state.kind !== 'closing' && this.state.kind !== 'exited' && data['exitCode'] !== 0) {
                     this.notification.show(`AI の処理が終了しました（コード ${data['exitCode']}）。端末の出力を確認してください。`, 'error');
                 }
@@ -331,6 +345,14 @@ export class TerminalPanel {
         }
     }
 
+
+    private completeAiSession(): void {
+        // sessionIdを手放し、close応答・exit通知の順序にかかわらず遅延した旧通知を無効にする。
+        this.state = {kind: 'idle'};
+        // 終了ボタンをhiddenにする前に、表示を所有する親へフォーカスの復帰と保存を任せる。
+        this.bottomPanel.onAiTerminalExited();
+        this.renderState();
+    }
 
     private failSession(sessionId: string, error: unknown): void {
         if (this.disposed || this.state.kind === 'idle' || this.state.kind === 'failed' || this.state.kind === 'exited' || this.state.sessionId !== sessionId) return;

@@ -20,6 +20,7 @@ interface TerminalMockState extends TerminalMockOptions {
     aiStatusDelayMs: number;
     requests: TerminalMockRequest[];
     closeExitCode: number;
+    closeExitBeforeResponse: boolean;
     dispatch(data: object): void;
 }
 
@@ -38,6 +39,7 @@ export async function installTerminalMockAsync(page: Page, options: TerminalMock
             aiStatusDelayMs: 0,
             requests: [],
             closeExitCode: 0,
+            closeExitBeforeResponse: false,
             dispatch(): void { throw new Error('ターミナルの初回リクエストがまだありません'); },
         };
         mockWindow.__mockTerminalHandle = (request, dispatch) => {
@@ -65,8 +67,11 @@ export async function installTerminalMockAsync(page: Page, options: TerminalMock
                 }, state.startDelayMs);
                 return;
             }
+            if (request.type === 'terminal_close_request' && state.closeExitBeforeResponse) {
+                dispatch({type: 'terminal_exit', sessionId: request.sessionId, exitCode: state.closeExitCode});
+            }
             dispatch({...response, success: true});
-            if (request.type === 'terminal_close_request') {
+            if (request.type === 'terminal_close_request' && !state.closeExitBeforeResponse) {
                 // 要求応答のawait継続が先に実行される、ネイティブ側のイベント順序を再現する。
                 window.setTimeout(() => dispatch({type: 'terminal_exit', sessionId: request.sessionId, exitCode: state.closeExitCode}), 0);
             }
@@ -102,4 +107,8 @@ export async function installAiTerminalMockAsync(page: Page, options: TerminalMo
         state.aiInstalled = config.installed;
         state.aiStatusDelayMs = config.statusDelayMs;
     }, options);
+}
+
+export async function configureTerminalCloseOrderAsync(page: Page, exitBeforeResponse: boolean): Promise<void> {
+    await page.evaluate(value => { (window as unknown as TerminalMockWindow).__mockTerminal.closeExitBeforeResponse = value; }, exitBeforeResponse);
 }

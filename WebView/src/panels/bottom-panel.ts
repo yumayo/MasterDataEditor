@@ -2,7 +2,8 @@ import {ResizeHandle} from "../ui/resize-handle";
 import type {ValidationPanel} from "./validation-panel";
 import type {DebugConsole} from "./debug-console";
 import type {UiStateStore} from "../app/ui-state";
-import type {TerminalPanel} from "./terminal-panel";
+import {TerminalPanel} from "./terminal-panel";
+import type {NotificationToast} from "../ui/notification";
 
 export type BottomTab = 'problems' | 'debug' | 'ai' | 'terminal';
 
@@ -34,11 +35,9 @@ export class BottomPanel {
     private readonly uiStateStore: UiStateStore;
     private activeTab: BottomTab;
 
-    constructor(validationPanel: ValidationPanel, debugConsole: DebugConsole, terminalPanel: TerminalPanel, aiPanel: TerminalPanel, uiStateStore: UiStateStore) {
+    constructor(validationPanel: ValidationPanel, debugConsole: DebugConsole, notification: NotificationToast, themeRoot: HTMLElement, uiStateStore: UiStateStore) {
         this.validationPanel = validationPanel;
         this.debugConsole = debugConsole;
-        this.terminalPanel = terminalPanel;
-        this.aiPanel = aiPanel;
         this.uiStateStore = uiStateStore;
         const storedState = this.uiStateStore.getState().bottomPanel;
         this.activeTab = storedState.activeTab;
@@ -104,11 +103,15 @@ export class BottomPanel {
 
         panel.appendChild(tabBar);
 
+        // 端末の表示寿命と終了通知先をこの親に集約し、同じインスタンスを直接参照させる。
+        this.terminalPanel = new TerminalPanel(notification, themeRoot, 'terminal', this);
+        this.aiPanel = new TerminalPanel(notification, themeRoot, 'ai', this);
+
         // 各コンテンツをパネル内に追加する（表示/非表示は applyTabState で管理）
         validationPanel.appendTo(panel);
         debugConsole.appendTo(panel);
-        aiPanel.appendTo(panel);
-        terminalPanel.appendTo(panel);
+        this.aiPanel.appendTo(panel);
+        this.terminalPanel.appendTo(panel);
 
         this.applyTabState();
     }
@@ -133,6 +136,12 @@ export class BottomPanel {
      */
     appendTo(parent: HTMLElement): void {
         parent.appendChild(this.element);
+    }
+
+    /** AIの終了は、いま表示しているAI領域だけを閉じる。 */
+    onAiTerminalExited(): void {
+        if (this.activeTab !== 'ai' || this.element.style.display === 'none') return;
+        this.hide();
     }
 
     private createTabBtn(label: string, tab: BottomTab): HTMLElement {
