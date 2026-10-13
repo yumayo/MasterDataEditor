@@ -13,11 +13,14 @@ export interface TerminalMockRequest {
     cols?: number;
     rows?: number;
     data?: string;
+    tool?: string;
 }
 
 interface TerminalMockState extends TerminalMockOptions {
     aiInstalled: boolean;
     aiStatusDelayMs: number;
+    aiStatusHeld: boolean;
+    aiStatusResponses: object[];
     requests: TerminalMockRequest[];
     closeExitCode: number;
     closeExitBeforeResponse: boolean;
@@ -37,6 +40,8 @@ export async function installTerminalMockAsync(page: Page, options: TerminalMock
             ...config,
             aiInstalled: false,
             aiStatusDelayMs: 0,
+            aiStatusHeld: false,
+            aiStatusResponses: [],
             requests: [],
             closeExitCode: 0,
             closeExitBeforeResponse: false,
@@ -53,7 +58,9 @@ export async function installTerminalMockAsync(page: Page, options: TerminalMock
                 sessionId: request.sessionId,
             };
             if (request.type === 'terminal_ai_status_request') {
-                window.setTimeout(() => dispatch({...response, success: true, data: {installed: state.aiInstalled, cwd: 'C:\\作業 workspace', installationDirectory: 'C:\\User Data\\ai-container'}}), state.aiStatusDelayMs);
+                const status = {...response, success: true, data: {installed: state.aiInstalled, cwd: 'C:\\作業 workspace', installationDirectory: 'C:\\User Data\\ai-container'}};
+                if (state.aiStatusHeld) state.aiStatusResponses.push(status);
+                else window.setTimeout(() => dispatch(status), state.aiStatusDelayMs);
                 return;
             }
             if (request.type === 'terminal_start_request' || request.type === 'terminal_ai_start_request' || request.type === 'terminal_ai_install_request') {
@@ -62,7 +69,7 @@ export async function installTerminalMockAsync(page: Page, options: TerminalMock
                         dispatch({...response, success: false, error: state.startError, stack: 'at MockTerminal.Start()'});
                     } else {
                         if (request.type === 'terminal_ai_install_request') state.aiInstalled = true;
-                        dispatch({...response, success: true, data: {shell: 'Windows PowerShell', cwd: 'C:\\workspace'}});
+                        dispatch({...response, success: true, data: {shell: request.type === 'terminal_start_request' ? 'Windows PowerShell' : request.tool === 'codex' ? 'Codex · Windows PowerShell' : 'Claude · Windows PowerShell', cwd: 'C:\\workspace'}});
                     }
                 }, state.startDelayMs);
                 return;
@@ -111,4 +118,15 @@ export async function installAiTerminalMockAsync(page: Page, options: TerminalMo
 
 export async function configureTerminalCloseOrderAsync(page: Page, exitBeforeResponse: boolean): Promise<void> {
     await page.evaluate(value => { (window as unknown as TerminalMockWindow).__mockTerminal.closeExitBeforeResponse = value; }, exitBeforeResponse);
+}
+
+/** 確認応答の前後を実時間に依存せずテスト側の操作で区切る。 */
+export async function holdAiTerminalStatusAsync(page: Page, held: boolean): Promise<void> {
+    await page.evaluate(value => {
+        const state = (window as unknown as TerminalMockWindow).__mockTerminal;
+        state.aiStatusHeld = value;
+        if (!value) {
+            for (const response of state.aiStatusResponses.splice(0)) state.dispatch(response);
+        }
+    }, held);
 }

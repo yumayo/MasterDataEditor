@@ -19,12 +19,13 @@ internal sealed class AiTerminalLauncher
         return Directory.Exists(Path.Combine(_repositoryDirectory, ".git")) && File.Exists(Path.Combine(_repositoryDirectory, "start-wsl-containers.ps1"));
     }
 
-    public string CreateArguments(string workspace, bool install)
+    public string CreateArguments(string workspace, bool install, string tool)
     {
+        if (tool is not ("claude" or "codex")) throw new ArgumentException("AI tool は claude または codex を指定してください。", nameof(tool));
         var shell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
         var script = Path.Combine(_repositoryDirectory, "start-wsl-containers.ps1");
         // PowerShell 5 の native argument 再構築に任せず、空白＋末尾区切りも Windows 引数として引用する。
-        var childArguments = "-NoProfile -ExecutionPolicy Bypass -File " + QuoteWindowsArgument(script) + " -Workspace " + QuoteWindowsArgument(workspace) + " -Tool claude";
+        var childArguments = "-NoProfile -ExecutionPolicy Bypass -File " + QuoteWindowsArgument(script) + " -Workspace " + QuoteWindowsArgument(workspace) + " -Tool " + tool;
         var bootstrap = $$"""
             $ErrorActionPreference = 'Stop'
             $repository = {{QuotePowerShellLiteral(_repositoryDirectory)}}

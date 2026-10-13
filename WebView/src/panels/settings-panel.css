@@ -118,7 +118,8 @@
     background-color: var(--hover-color-strong);
 }
 
-.settings-workspace-trust-description {
+.settings-workspace-trust-description,
+.settings-description {
     margin: 8px 12px 0;
     color: var(--secondary-font-color);
     font-size: 12px;
@@ -212,7 +213,7 @@
     min-width: var(--settings-label-width);
 }
 
-/* テーマ選択カスタムドロップダウン */
+/* 設定選択の共通カスタムドロップダウン */
 .settings-dropdown {
     position: relative;
     width: var(--settings-control-width);
@@ -237,6 +238,11 @@
 
 .settings-dropdown-trigger:hover {
     border-color: rgba(128, 128, 128, 0.7);
+}
+
+.settings-dropdown-trigger:focus-visible {
+    outline: 1px solid var(--focus-border);
+    outline-offset: 2px;
 }
 
 .settings-dropdown-chevron {
@@ -275,7 +281,8 @@
     color: var(--selection-font-color);
 }
 
-.settings-dropdown-item:hover {
+.settings-dropdown-item:hover,
+.settings-dropdown-item:focus-visible {
     background-color: var(--selection-color);
     color: var(--selection-font-color);
 }

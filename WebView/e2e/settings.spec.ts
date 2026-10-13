@@ -12,7 +12,7 @@ async function openSettingsTabAsync(page: Page): Promise<void> {
 }
 
 async function selectThemeAsync(page: Page, theme: 'dark' | 'light'): Promise<void> {
-    const trigger = page.locator('.settings-panel .settings-dropdown-trigger');
+    const trigger = page.locator('.settings-panel [data-setting-key="theme"] .settings-dropdown-trigger');
     await trigger.click();
     await page.locator(`.settings-dropdown-item[data-value="${theme}"]`).click();
 }
@@ -184,7 +184,7 @@ test.describe('設定画面', () => {
         async ({ page, mockFileSystem }) => {
             await openSettingsTabAsync(page);
 
-            const trigger = page.locator('.settings-panel .settings-dropdown-trigger');
+            const trigger = page.locator('.settings-panel [data-setting-key="theme"] .settings-dropdown-trigger');
             await expect(trigger).toBeVisible();
             await expect(page.locator('.settings-panel .settings-dropdown-item[data-value="light"]')).toHaveCount(1);
             await expect(page.locator('.settings-panel .settings-dropdown-item[data-value="dark"]')).toHaveCount(1);
@@ -274,7 +274,7 @@ test.describe('設定画面', () => {
             ))).toBe('1');
             await openSettingsTabAsync(page);
             await expect(page.locator('.settings-scope-tab[data-scope="user"]')).toHaveAttribute('aria-selected', 'true');
-            await expect(page.locator('.settings-panel .settings-dropdown-trigger')).toHaveText(/ライト/);
+            await expect(page.locator('.settings-panel [data-setting-key="theme"] .settings-dropdown-trigger')).toHaveText(/ライト/);
             await expect(page.locator('.settings-tab-wrap-checkbox')).not.toBeChecked();
             await expect(page.locator('.settings-export-validation-datetime-input')).toHaveValue('');
         },
@@ -491,7 +491,7 @@ test.describe('設定画面', () => {
                 exportEndDateColumnName: 'finish_at',
             });
             await expect(page.locator('body')).toHaveAttribute('data-theme', 'dark');
-            await expect(page.locator('.settings-panel .settings-dropdown-trigger')).toHaveText(/ダーク/);
+            await expect(page.locator('.settings-panel [data-setting-key="theme"] .settings-dropdown-trigger')).toHaveText(/ダーク/);
             await expect(page.locator('.settings-export-validation-datetime-input')).toHaveValue('2026-05-10 12:30:45');
             await expect(themeResetButton).toBeDisabled();
             await expect(dateTimeResetButton).toBeEnabled();
@@ -545,7 +545,7 @@ test.describe('設定画面', () => {
             await page.keyboard.press('Control+Z');
             await waitForSettingsJsonAsync(page, SETTINGS_FILE, {});
             await expect(page.locator('body')).toHaveAttribute('data-theme', 'dark');
-            await expect(page.locator('.settings-panel .settings-dropdown-trigger')).toHaveText(/ダーク/);
+            await expect(page.locator('.settings-panel [data-setting-key="theme"] .settings-dropdown-trigger')).toHaveText(/ダーク/);
 
             await page.keyboard.press('Control+Y');
             await waitForSettingsJsonAsync(page, SETTINGS_FILE, {
@@ -576,7 +576,7 @@ test.describe('設定画面', () => {
             await page.goto('/');
             await openSettingsTabAsync(page);
 
-            await expect(page.locator('.settings-panel .settings-dropdown-trigger')).toHaveText(/ダーク/);
+            await expect(page.locator('.settings-panel [data-setting-key="theme"] .settings-dropdown-trigger')).toHaveText(/ダーク/);
             await expect(page.locator('.settings-tab-wrap-checkbox')).not.toBeChecked();
             await expect(page.locator('.settings-export-begin-date-column-input')).toHaveValue('export_begin_date');
             await expect(page.locator('.settings-export-end-date-column-input')).toHaveValue('finish_at');
@@ -642,7 +642,7 @@ test.describe('設定画面', () => {
 
             await settingsButton.click();
 
-            const reopenedTrigger = page.locator('.settings-panel .settings-dropdown-trigger');
+            const reopenedTrigger = page.locator('.settings-panel [data-setting-key="theme"] .settings-dropdown-trigger');
             await expect(reopenedTrigger).toHaveText(/ライト/);
 
             await selectThemeAsync(page, 'dark');

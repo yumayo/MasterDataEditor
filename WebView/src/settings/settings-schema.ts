@@ -1,4 +1,5 @@
 export type ThemeValue = 'dark' | 'light';
+export type AiTool = 'claude' | 'codex';
 export type SettingValue = ThemeValue | boolean | string | number;
 export type SettingValueType = 'select' | 'boolean' | 'string' | 'number';
 export type SettingControlKind = 'select' | 'toggle' | 'dateTime' | 'text' | 'number';
@@ -9,6 +10,7 @@ export const SETTINGS_CHANGED_EVENT = 'settings-changed';
 
 export const SETTING_SECTIONS = [
     {id: 'display', label: '表示'},
+    {id: 'aiContainer', label: 'AIコンテナ'},
     {id: 'largeFile', label: '巨大ファイル'},
     {id: 'exportValidation', label: '出力フィルター'},
 ] as const;
@@ -31,6 +33,9 @@ interface SettingDefinition<T extends SettingValue> {
     readonly defaultValue: T;
     readonly section: SettingSectionId;
     readonly control: SettingControlKind;
+    /** 既定値も明示指定として保存し、上位スコープから下位スコープを上書きできる設定。 */
+    readonly preserveDefaultValue?: boolean;
+    readonly description?: string;
     readonly rowElement?: SettingRowElementName;
     readonly rootClassNames?: readonly string[];
     readonly inputClassNames?: readonly string[];
@@ -56,6 +61,19 @@ export const SETTING_DEFINITIONS = {
         options: [
             {value: 'dark', label: 'ダーク'},
             {value: 'light', label: 'ライト'},
+        ],
+    }),
+    aiTool: defineSetting<AiTool>({
+        label: '使用するAI',
+        type: 'select',
+        defaultValue: 'claude',
+        section: 'aiContainer',
+        control: 'select',
+        preserveDefaultValue: true,
+        description: '次回のAI起動から適用します。実行中のAIは変更しません。Userの指定はWorkspaceより優先されます。設定を解除するとUserはWorkspaceを継承し、WorkspaceはClaudeに戻ります。',
+        options: [
+            {value: 'claude', label: 'Claude'},
+            {value: 'codex', label: 'Codex'},
         ],
     }),
     tabWrapEnabled: defineSetting<boolean>({

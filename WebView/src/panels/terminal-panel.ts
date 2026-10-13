@@ -1,3 +1,5 @@
+import {getAppliedSettings} from "./settings-panel";
+import {getSettingOptionLabel} from "../settings/settings-schema";
 import {isWorkspaceTrusted} from "../app/workspace-trust";
 import {Terminal} from '@xterm/xterm';
 import {FitAddon} from '@xterm/addon-fit';
@@ -70,7 +72,7 @@ export class TerminalPanel {
         this.status.setAttribute('role', 'status');
         this.location = document.createElement('span');
         this.location.className = `${prefix}-location`;
-        this.location.textContent = kind === 'ai' ? 'Claude · ai-container' : 'Windows PowerShell';
+        this.location.textContent = kind === 'ai' ? 'AI · ai-container' : 'Windows PowerShell';
         this.startButton = document.createElement('button');
         this.startButton.type = 'button';
         this.startButton.className = `${prefix}-action`;
@@ -292,9 +294,13 @@ export class TerminalPanel {
         this.ensureOpened();
         // 明示操作の時点でフォーカスを移し、導入確認を待つ間のユーザーの移動は尊重する。
         this.terminal.focus();
+        // 導入確認の応答待ちで設定が変わっても、この開始操作のツールは変えない。
+        const tool = getAppliedSettings().aiTool;
+        const toolLabel = getSettingOptionLabel('aiTool', tool);
         const sessionId = crypto.randomUUID();
         let operation: TerminalOperation = 'start';
         if (this.kind === 'ai') {
+            this.location.textContent = `${toolLabel} · ai-container`;
             if (this.state.kind === 'uninstalled') {
                 operation = 'ai_install';
             } else {
@@ -305,7 +311,7 @@ export class TerminalPanel {
                     if (this.disposed || this.state.sessionId !== sessionId || this.state.kind !== 'checking') return;
                     const data = response['data'];
                     if (typeof data !== 'object' || data === null || !('installed' in data) || typeof data.installed !== 'boolean' || !('cwd' in data) || typeof data.cwd !== 'string') throw new Error('AI の導入状態の応答が不正です');
-                    this.location.textContent = `Claude · ${data.cwd}`;
+                    this.location.textContent = `${toolLabel} · ${data.cwd}`;
                     this.location.title = data.cwd;
                     if (!data.installed) {
                         this.state = {kind: 'uninstalled', sessionId};
@@ -327,7 +333,8 @@ export class TerminalPanel {
         this.terminal.reset();
         this.renderState();
         try {
-            const response = await this.requestAsync(operation, sessionId, {cols: this.terminal.cols, rows: this.terminal.rows});
+            const dimensions = {cols: this.terminal.cols, rows: this.terminal.rows};
+            const response = await this.requestAsync(operation, sessionId, this.kind === 'ai' ? {...dimensions, tool} : dimensions);
             if (this.disposed || this.state.sessionId !== sessionId || this.state.kind !== 'starting') return;
             const data = response['data'];
             if (typeof data !== 'object' || data === null || !('shell' in data) || typeof data.shell !== 'string' || !('cwd' in data) || typeof data.cwd !== 'string') {

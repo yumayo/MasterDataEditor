@@ -37,7 +37,7 @@ async function expectNativePaletteAsync(page: Page, palette: NativePalette): Pro
 }
 
 async function selectThemeAsync(page: Page, theme: Theme): Promise<void> {
-    await page.locator('.settings-panel .settings-dropdown-trigger').click();
+    await page.locator('.settings-panel [data-setting-key="theme"] .settings-dropdown-trigger').click();
     await page.locator(`.settings-dropdown-item[data-value="${theme}"]`).click();
     await expect(page.locator('body')).toHaveAttribute('data-theme', theme);
 }

@@ -10,7 +10,6 @@ import {DateTimePicker, normalizeDateTimeInputToSeconds} from "../ui/date-time-p
 import {
     createApplicationDefaultSettings,
     getApplicationDefaultValue,
-    getDefaultedSettingValue,
     getSettingLabel,
     getSettingOptionLabel,
     getSettingOptions,
@@ -239,7 +238,16 @@ function resolveEffectiveSettings(settingsState: ScopedSettingsState): SettingsV
 }
 
 function resolveSettingsForScopeView(scope: SettingsScope, settingsState: ScopedSettingsState): SettingsValues {
-    return {...settingsState[scope]};
+    const settings = {...settingsState[scope]};
+    // 明示指定を保存する項目は、未指定時の継承値と画面の選択表示を一致させる。
+    if (scope === 'user') {
+        for (const key of SETTING_KEYS) {
+            if (SETTING_DEFINITIONS[key].preserveDefaultValue === true && settings[key] === null) {
+                setSettingValue(settings, key, settingsState.workspace[key]);
+            }
+        }
+    }
+    return settings;
 }
 
 function resolveDefaultedSettingsForScopeView(scope: SettingsScope, settingsState: ScopedSettingsState): DefaultedSettingsValues {
@@ -256,7 +264,7 @@ function normalizeSettingsValueForScopeDefault<TKey extends SettingsKey>(
         ? normalizeNumberSettingValue(key, value as number)
         : value;
     const defaultValue = getApplicationDefaultValue(key);
-    return normalizedValue === defaultValue ? null : normalizedValue as SettingsValues[TKey];
+    return definition.preserveDefaultValue !== true && normalizedValue === defaultValue ? null : normalizedValue as SettingsValues[TKey];
 }
 
 function normalizeSettingsValues(settings: SettingsValues): SettingsValues {
@@ -406,6 +414,7 @@ type SettingControlMap = {
 
 export class SettingsPanel {
     private readonly element: HTMLElement;
+    private readonly notification: NotificationToast;
     private activeScope: SettingsScope;
     private readonly scopeButtons: Record<SettingsScope, HTMLButtonElement>;
     private readonly settingControls: SettingControlMap;
@@ -421,6 +430,7 @@ export class SettingsPanel {
 
     constructor(tabButton: TabButton, notification: NotificationToast) {
         this.tabButton = tabButton;
+        this.notification = notification;
         this.settingControls = {};
         this.undoStack = [];
         this.redoStack = [];
@@ -502,6 +512,14 @@ export class SettingsPanel {
                     control.root,
                     SETTING_DEFINITIONS[key].rowElement ?? 'div',
                 ));
+                const description = SETTING_DEFINITIONS[key].description;
+                if (typeof description === 'string') {
+                    const paragraph = document.createElement('p');
+                    paragraph.id = `settings-description-${key}`;
+                    paragraph.classList.add('settings-description');
+                    paragraph.textContent = description;
+                    sectionItems.appendChild(paragraph);
+                }
             }
             this.element.appendChild(section);
         }
@@ -559,48 +577,87 @@ export class SettingsPanel {
     private createSelectSettingControl(key: SettingsKey, value: SettingValue): SettingControl {
         const dropdown = document.createElement('div');
         dropdown.classList.add('settings-dropdown');
-
         const trigger = document.createElement('button');
         trigger.type = 'button';
         trigger.classList.add('settings-dropdown-trigger');
-
+        trigger.setAttribute('aria-haspopup', 'listbox');
+        trigger.setAttribute('aria-expanded', 'false');
+        if (typeof SETTING_DEFINITIONS[key].description === 'string') trigger.setAttribute('aria-describedby', `settings-description-${key}`);
         const selectedLabel = document.createElement('span');
         const chevron = document.createElement('span');
         chevron.classList.add('settings-dropdown-chevron');
         chevron.textContent = '\u25BC';
-        trigger.appendChild(selectedLabel);
-        trigger.appendChild(chevron);
+        trigger.append(selectedLabel, chevron);
 
         const list = document.createElement('div');
+        list.id = `settings-options-${key}`;
         list.classList.add('settings-dropdown-list');
+        list.setAttribute('role', 'listbox');
+        list.setAttribute('aria-label', getSettingLabel(key));
+        trigger.setAttribute('aria-controls', list.id);
+        const setOpen = (open: boolean): void => {
+            list.classList.toggle('visible', open);
+            trigger.setAttribute('aria-expanded', String(open));
+            if (open) {
+                const selected = list.querySelector<HTMLElement>('[aria-selected="true"]');
+                if (selected === null) throw new Error(`設定の選択値が見つかりません: ${key}`);
+                selected.focus();
+            }
+        };
         for (const option of getSettingOptions(key)) {
             const item = document.createElement('div');
             item.classList.add('settings-dropdown-item');
             item.dataset.value = String(option.value);
             item.textContent = option.label;
-            item.addEventListener('click', () => {
-                this.commitSettingValue(key, option.value, `save ${String(key)} failed`);
-                list.classList.remove('visible');
+            item.setAttribute('role', 'option');
+            item.tabIndex = -1;
+            const commit = (): void => {
+                this.commitSettingValue(key, option.value);
+                trigger.focus();
+                setOpen(false);
+            };
+            item.addEventListener('click', commit);
+            item.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    commit();
+                } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+                    event.preventDefault();
+                    const next = event.key === 'Home' ? list.firstElementChild : event.key === 'End' ? list.lastElementChild : event.key === 'ArrowDown' ? item.nextElementSibling : item.previousElementSibling;
+                    if (next instanceof HTMLElement) next.focus();
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    trigger.focus();
+                    setOpen(false);
+                }
             });
             list.appendChild(item);
         }
-
         let selectedValue = value;
         const setValue = (nextValue: SettingValue): void => {
             selectedValue = nextValue;
-            selectedLabel.textContent = getSettingOptionLabel(key, nextValue as SettingValueFor<typeof key>);
+            const optionLabel = getSettingOptionLabel(key, nextValue as SettingValueFor<typeof key>);
+            selectedLabel.textContent = optionLabel;
+            trigger.setAttribute('aria-label', `${getSettingLabel(key)}: ${optionLabel}`);
             this.updateSelectItemStyles(list, selectedValue);
         };
-
-        trigger.addEventListener('click', () => { list.classList.toggle('visible'); });
-        dropdown.appendChild(trigger);
-        dropdown.appendChild(list);
+        trigger.addEventListener('click', () => { setOpen(!list.classList.contains('visible')); });
+        trigger.addEventListener('keydown', event => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                setOpen(true);
+            }
+        });
+        dropdown.addEventListener('focusout', event => {
+            if (!(event.relatedTarget instanceof Node) || !dropdown.contains(event.relatedTarget)) setOpen(false);
+        });
+        dropdown.append(trigger, list);
         setValue(value);
         return {
             root: dropdown,
             getValue: () => selectedValue,
             setValue,
-            close: () => { list.classList.remove('visible'); },
+            close: () => { setOpen(false); },
             containsTarget: (target: Node) => dropdown.contains(target),
         };
     }
@@ -613,7 +670,7 @@ export class SettingsPanel {
         let selectedValue = value === true;
         const toggle = new ToggleControl(root, definition.label, selectedValue, definition.inputClassNames ?? []);
         toggle.onChange((checked) => {
-            this.commitSettingValue(key, checked, `save ${String(key)} failed`);
+            this.commitSettingValue(key, checked);
         });
         return {
             root,
@@ -637,7 +694,6 @@ export class SettingsPanel {
                 this.commitSettingValue(
                     key,
                     normalizeDateTimeInputToSeconds(nextValue) ?? nextValue.trim(),
-                    `save ${String(key)} failed`,
                 );
             },
         });
@@ -666,7 +722,7 @@ export class SettingsPanel {
         let selectedValue = String(value);
         input.value = selectedValue;
         this.addTextInputCommitHandlers(input, () => {
-            this.commitSettingValue(key, input.value.trim(), `save ${String(key)} failed`);
+            this.commitSettingValue(key, input.value.trim());
         });
         return {
             root: input,
@@ -695,7 +751,7 @@ export class SettingsPanel {
             const nextValue = Number.isFinite(parsed)
                 ? normalizeNumberSettingValue(key, parsed)
                 : selectedValue;
-            this.commitSettingValue(key, nextValue, `save ${String(key)} failed`);
+            this.commitSettingValue(key, nextValue);
         };
         this.addTextInputCommitHandlers(input, commit);
         return {
@@ -716,20 +772,22 @@ export class SettingsPanel {
 
     private updateSelectItemStyles(list: HTMLElement, selectedValue: SettingValue): void {
         for (const item of Array.from(list.children) as HTMLElement[]) {
-            item.classList.toggle('settings-dropdown-item-active', item.dataset.value === String(selectedValue));
+            const selected = item.dataset.value === String(selectedValue);
+            item.classList.toggle('settings-dropdown-item-active', selected);
+            item.setAttribute('aria-selected', String(selected));
         }
     }
 
-    private commitSettingValue(key: SettingsKey, value: SettingValue, errorContext: string): void {
+    private commitSettingValue(key: SettingsKey, value: SettingValue): void {
         const control = this.getSettingControl(key);
-        if (control.getValue() === value) {
+        if (loadedSettingsState[this.activeScope][key] === normalizeSettingsValueForScopeDefault(key, value)) {
             control.setValue(value);
             return;
         }
         control.setValue(value);
         const patch: SettingsPatch = {};
         setSettingsPatchValue(patch, key, value as SettingsPatch[typeof key]);
-        this.applyAndSaveSettingsPatch(patch, errorContext);
+        this.applyAndSaveSettingsPatch(patch);
     }
 
     private createScopeButton(scope: SettingsScope): HTMLButtonElement {
@@ -771,19 +829,17 @@ export class SettingsPanel {
     }
 
     private updateSettingDifferenceMarkers(): void {
-        const currentSettings = resolveDefaultedSettingsForScopeView(this.activeScope, loadedSettingsState);
-        const defaultSettings = createApplicationDefaultSettings();
         for (const label of Array.from(this.element.querySelectorAll<HTMLElement>('.settings-label[data-setting-key]'))) {
             const key = label.dataset.settingKey;
             if (key === undefined || !isSettingKey(key)) continue;
-            const differs = getDefaultedSettingValue(currentSettings, key) !== getDefaultedSettingValue(defaultSettings, key);
+            const differs = loadedSettingsState[this.activeScope][key] !== null;
             label.classList.toggle('settings-label-default-different', differs);
             label.dataset.defaultDifferent = differs ? 'true' : 'false';
         }
         for (const button of Array.from(this.element.querySelectorAll<HTMLButtonElement>('.settings-reset-setting-button[data-setting-key]'))) {
             const key = button.dataset.settingKey;
             if (key === undefined || !isSettingKey(key)) continue;
-            const differs = getDefaultedSettingValue(currentSettings, key) !== getDefaultedSettingValue(defaultSettings, key);
+            const differs = loadedSettingsState[this.activeScope][key] !== null;
             button.disabled = !differs;
         }
     }
@@ -850,7 +906,7 @@ export class SettingsPanel {
         button.type = 'button';
         button.classList.add('settings-reset-setting-button');
         button.dataset.settingKey = key;
-        button.textContent = 'デフォルト';
+        button.textContent = SETTING_DEFINITIONS[key].preserveDefaultValue === true ? '設定を解除' : 'デフォルト';
         button.addEventListener('click', (event: MouseEvent) => {
             event.preventDefault();
             event.stopPropagation();
@@ -860,19 +916,12 @@ export class SettingsPanel {
     }
 
     private resetSettingToDefault(key: SettingsKey): void {
-        const currentSettings = resolveDefaultedSettingsForScopeView(this.activeScope, loadedSettingsState);
-        const defaultSettings = createApplicationDefaultSettings();
-        if (getDefaultedSettingValue(currentSettings, key) === getDefaultedSettingValue(defaultSettings, key)) return;
+        if (loadedSettingsState[this.activeScope][key] === null) return;
         this.closeDropdown();
-        this.applyAndSaveSettingsPatch(this.createDefaultSettingPatch(key), 'reset setting to default failed');
-        this.updateControlsFromActiveScope();
-    }
-
-    private createDefaultSettingPatch(key: SettingsKey): SettingsPatch {
-        const defaults = createApplicationDefaultSettings();
         const patch: SettingsPatch = {};
-        setSettingsPatchValue(patch, key, defaults[key]);
-        return patch;
+        setSettingsPatchValue(patch, key, null);
+        this.applyAndSaveSettingsPatch(patch);
+        this.updateControlsFromActiveScope();
     }
 
     private closeDropdown(): void {
@@ -906,12 +955,12 @@ export class SettingsPanel {
         this.writeSettingsAsync(loadedSettingsState[this.activeScope])
             .then(() => { this.tabButton.setDirty(false); })
             .catch((error: unknown) => {
-                console.error('[SettingsPanel] save failed:', String(error));
+                this.notification.showError(error);
                 this.tabButton.setDirty(true);
             });
     }
 
-    private applyAndSaveSettingsPatch(settings: SettingsPatch, errorContext: string): void {
+    private applyAndSaveSettingsPatch(settings: SettingsPatch): void {
         const before = cloneSettingsState(loadedSettingsState);
         const after = applySettingsPatchToState(loadedSettingsState, this.activeScope, settings);
         if (areSettingsStatesEqual(before, after)) return;
@@ -922,7 +971,7 @@ export class SettingsPanel {
         this.writeSettingsAsync(loadedSettingsState[this.activeScope])
             .then(() => { this.tabButton.setDirty(false); })
             .catch((error: unknown) => {
-                console.error(`[SettingsPanel] ${errorContext}:`, String(error));
+                this.notification.showError(error);
                 this.tabButton.setDirty(true);
             });
     }
@@ -967,17 +1016,17 @@ export class SettingsPanel {
         const entry = this.undoStack.pop();
         if (entry === undefined) return;
         this.redoStack.push(entry);
-        this.applyHistoryState(entry.before, entry.scope, 'undo settings failed');
+        this.applyHistoryState(entry.before, entry.scope);
     }
 
     private redoSettingsChange(): void {
         const entry = this.redoStack.pop();
         if (entry === undefined) return;
         this.undoStack.push(entry);
-        this.applyHistoryState(entry.after, entry.scope, 'redo settings failed');
+        this.applyHistoryState(entry.after, entry.scope);
     }
 
-    private applyHistoryState(settingsState: ScopedSettingsState, scope: SettingsScope, errorContext: string): void {
+    private applyHistoryState(settingsState: ScopedSettingsState, scope: SettingsScope): void {
         const before = cloneSettingsState(loadedSettingsState);
         loadedSettingsState = cloneSettingsState(settingsState);
         this.activeScope = scope;
@@ -988,7 +1037,7 @@ export class SettingsPanel {
         this.writeSettingsAsync(loadedSettingsState[scope])
             .then(() => { this.tabButton.setDirty(false); })
             .catch((error: unknown) => {
-                console.error(`[SettingsPanel] ${errorContext}:`, String(error));
+                this.notification.showError(error);
                 this.tabButton.setDirty(true);
             });
     }

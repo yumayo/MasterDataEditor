@@ -96,6 +96,12 @@ internal sealed class TerminalHost : IDisposable
                     {
                         if (_sessions.ContainsKey(sessionId) || _sessions.Values.Any(value => value.Kind == kind)) throw new InvalidOperationException("この種類のターミナルはすでに起動しています。");
                     }
+                    var tool = "";
+                    if (kind == "ai")
+                    {
+                        if (!request.TryGetProperty("tool", out var requestedTool) || requestedTool.ValueKind != JsonValueKind.String) throw new ArgumentException("AI tool は文字列で指定してください。");
+                        tool = requestedTool.GetString()!;
+                    }
                     var workingDirectory = AppEnvironment.GetWorkDir();
                     var columns = request.GetProperty("cols").GetInt32();
                     var rows = request.GetProperty("rows").GetInt32();
@@ -109,7 +115,7 @@ internal sealed class TerminalHost : IDisposable
                         {
                             if (kind == "terminal") return ConPtySession.Start(workingDirectory, columns, rows, flow.SendAsync);
                             var launcher = new AiTerminalLauncher(System.IO.Path.Combine(AppEnvironment.GetUserDataDir(), "ai-container"));
-                            return ConPtySession.StartCommand(workingDirectory, launcher.CreateArguments(workingDirectory, requestType == "terminal_ai_install_request"), columns, rows, flow.SendAsync);
+                            return ConPtySession.StartCommand(workingDirectory, launcher.CreateArguments(workingDirectory, requestType == "terminal_ai_install_request", tool), columns, rows, flow.SendAsync);
                         });
                     }
                     catch
@@ -132,7 +138,7 @@ internal sealed class TerminalHost : IDisposable
                     lock (_sync) _sessions.Add(sessionId, (kind, terminal));
                     // 終了監視は要求キューを占有せず、起動直後に exit した場合も観測する。
                     _ = ObserveExitAsync(sessionId, terminal, flow, token);
-                    await SendAsync(new { type = responseType, requestId, sessionId, success = true, data = new { shell = kind == "ai" ? "Claude · Windows PowerShell" : "Windows PowerShell", cwd = workingDirectory } }, token).ConfigureAwait(false);
+                    await SendAsync(new { type = responseType, requestId, sessionId, success = true, data = new { shell = kind == "ai" ? (tool == "codex" ? "Codex" : "Claude") + " · Windows PowerShell" : "Windows PowerShell", cwd = workingDirectory } }, token).ConfigureAwait(false);
                     break;
                 }
                 case "terminal_input_request":
