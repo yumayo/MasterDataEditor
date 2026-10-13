@@ -6,9 +6,9 @@ import '@xterm/xterm/css/xterm.css';
 import './terminal-panel.css';
 
 type TerminalState = {kind: 'idle'}
-    | {kind: 'starting' | 'running' | 'closing' | 'failed'; sessionId: string}
+    | {kind: 'checking' | 'uninstalled' | 'starting' | 'running' | 'closing' | 'failed'; sessionId: string}
     | {kind: 'exited'; sessionId: string; exitCode: number};
-type TerminalOperation = 'start' | 'input' | 'resize' | 'close';
+type TerminalOperation = 'start' | 'ai_status' | 'ai_start' | 'ai_install' | 'input' | 'resize' | 'close';
 
 interface PendingTerminalRequest {
     sessionId: string;
@@ -20,7 +20,7 @@ interface PendingTerminalRequest {
 
 /** エディタのグローバルショートカットから端末の入力を分離する。 */
 export function isTerminalKeyboardTarget(target: EventTarget | null): boolean {
-    return target instanceof Element && target.closest('.terminal-panel') !== null;
+    return target instanceof Element && target.closest('.terminal-panel, .ai-terminal-panel') !== null;
 }
 
 /**
@@ -29,6 +29,7 @@ export function isTerminalKeyboardTarget(target: EventTarget | null): boolean {
  * シェル操作は外部プロセスへの入力であり、エディタのUndo/Redo対象ではない。
  */
 export class TerminalPanel {
+    private readonly kind: 'terminal' | 'ai';
     private readonly element: HTMLElement;
     private readonly host: HTMLElement;
     private readonly status: HTMLElement;
@@ -50,30 +51,32 @@ export class TerminalPanel {
     private outbound: Promise<void> = Promise.resolve();
     private previousFocus: HTMLElement;
 
-    constructor(notification: NotificationToast, themeRoot: HTMLElement) {
+    constructor(notification: NotificationToast, themeRoot: HTMLElement, kind: 'terminal' | 'ai') {
+        this.kind = kind;
+        const prefix = kind === 'ai' ? 'ai-terminal' : 'terminal';
         this.notification = notification;
         this.themeRoot = themeRoot;
         this.previousFocus = themeRoot;
         this.element = document.createElement('section');
-        this.element.className = 'terminal-panel';
-        this.element.setAttribute('aria-label', 'ターミナル');
+        this.element.className = `${prefix}-panel`;
+        this.element.setAttribute('aria-label', kind === 'ai' ? 'AIターミナル' : 'ターミナル');
         const toolbar = document.createElement('div');
-        toolbar.className = 'terminal-toolbar';
+        toolbar.className = `${prefix}-toolbar`;
         this.status = document.createElement('span');
-        this.status.className = 'terminal-status';
+        this.status.className = `${prefix}-status`;
         this.status.setAttribute('role', 'status');
         this.location = document.createElement('span');
-        this.location.className = 'terminal-location';
-        this.location.textContent = 'Windows PowerShell';
+        this.location.className = `${prefix}-location`;
+        this.location.textContent = kind === 'ai' ? 'Claude · ai-container' : 'Windows PowerShell';
         this.startButton = document.createElement('button');
         this.startButton.type = 'button';
-        this.startButton.className = 'terminal-action';
+        this.startButton.className = `${prefix}-action`;
         this.startButton.addEventListener('click', () => { void this.startAsync(); });
         this.closeButton = document.createElement('button');
         this.closeButton.type = 'button';
-        this.closeButton.className = 'terminal-action';
+        this.closeButton.className = `${prefix}-action`;
         this.closeButton.textContent = '終了';
-        this.closeButton.setAttribute('aria-label', 'ターミナルを終了');
+        this.closeButton.setAttribute('aria-label', kind === 'ai' ? 'AIを終了' : 'ターミナルを終了');
         this.closeButton.title = '実行中のコマンドとシェルを終了';
         this.closeButton.addEventListener('click', async () => {
             if (this.state.kind !== 'running') return;
@@ -95,7 +98,7 @@ export class TerminalPanel {
         });
         toolbar.append(this.status, this.location, this.startButton, this.closeButton);
         this.host = document.createElement('div');
-        this.host.className = 'terminal-host';
+        this.host.className = `${prefix}-host`;
         this.element.append(toolbar, this.host);
         this.host.addEventListener('paste', event => {
             if (this.state.kind === 'running') return;
@@ -181,6 +184,9 @@ export class TerminalPanel {
             const sessionId = this.state.sessionId;
             // close応答とプロセス監視の順序に関係なく、実際の終了コードを表示する。
             if (message.type === 'terminal_exit' && typeof data['exitCode'] === 'number') {
+                if (this.kind === 'ai' && this.state.kind !== 'closing' && this.state.kind !== 'exited' && data['exitCode'] !== 0) {
+                    this.notification.show(`AI の処理が終了しました（コード ${data['exitCode']}）。端末の出力を確認してください。`, 'error');
+                }
                 this.state = {kind: 'exited', sessionId, exitCode: data['exitCode']};
                 this.renderState();
                 return;
@@ -229,13 +235,13 @@ export class TerminalPanel {
         if (visible && this.opened && this.host.clientWidth > 0 && this.host.clientHeight > 0) this.fitAddon.fit();
     }
 
-    /** ユーザーがTERMINALを開いた時だけ初回起動し、以後は既存シェルへ戻る。 */
+    /** ユーザーの明示操作で初回起動し、以後は専用セッションの履歴へ戻る。 */
     activate(): void {
         const focused = this.element.ownerDocument.activeElement;
         if (focused instanceof HTMLElement && !this.element.contains(focused)) this.previousFocus = focused;
         this.ensureOpened();
         if (this.state.kind === 'idle') void this.startAsync();
-        else if (this.state.kind === 'running' || this.state.kind === 'starting') this.terminal.focus();
+        else if (this.state.kind === 'running' || this.state.kind === 'starting' || this.state.kind === 'checking') this.terminal.focus();
         else this.startButton.focus();
     }
 
@@ -268,15 +274,46 @@ export class TerminalPanel {
 
     private async startAsync(): Promise<void> {
         if (!isWorkspaceTrusted()) { this.renderState(); return; }
-        if (this.disposed || this.state.kind === 'starting' || this.state.kind === 'running' || this.state.kind === 'closing') return;
+        if (this.disposed || this.state.kind === 'checking' || this.state.kind === 'starting' || this.state.kind === 'running' || this.state.kind === 'closing') return;
         this.ensureOpened();
+        // 明示操作の時点でフォーカスを移し、導入確認を待つ間のユーザーの移動は尊重する。
+        this.terminal.focus();
         const sessionId = crypto.randomUUID();
+        let operation: TerminalOperation = 'start';
+        if (this.kind === 'ai') {
+            if (this.state.kind === 'uninstalled') {
+                operation = 'ai_install';
+            } else {
+                this.state = {kind: 'checking', sessionId};
+                this.renderState();
+                try {
+                    const response = await this.requestAsync('ai_status', sessionId, {});
+                    if (this.disposed || this.state.sessionId !== sessionId || this.state.kind !== 'checking') return;
+                    const data = response['data'];
+                    if (typeof data !== 'object' || data === null || !('installed' in data) || typeof data.installed !== 'boolean' || !('cwd' in data) || typeof data.cwd !== 'string') throw new Error('AI の導入状態の応答が不正です');
+                    this.location.textContent = `Claude · ${data.cwd}`;
+                    this.location.title = data.cwd;
+                    if (!data.installed) {
+                        this.state = {kind: 'uninstalled', sessionId};
+                        this.renderState();
+                        if (this.element.contains(this.element.ownerDocument.activeElement)) this.startButton.focus();
+                        return;
+                    }
+                    operation = 'ai_start';
+                } catch (error) {
+                    if (this.disposed || this.state.sessionId !== sessionId || this.state.kind !== 'checking') return;
+                    this.state = {kind: 'failed', sessionId};
+                    this.renderState();
+                    this.notification.showError(error);
+                    return;
+                }
+            }
+        }
         this.state = {kind: 'starting', sessionId};
         this.terminal.reset();
         this.renderState();
-        this.terminal.focus();
         try {
-            const response = await this.requestAsync('start', sessionId, {cols: this.terminal.cols, rows: this.terminal.rows});
+            const response = await this.requestAsync(operation, sessionId, {cols: this.terminal.cols, rows: this.terminal.rows});
             if (this.disposed || this.state.sessionId !== sessionId || this.state.kind !== 'starting') return;
             const data = response['data'];
             if (typeof data !== 'object' || data === null || !('shell' in data) || typeof data.shell !== 'string' || !('cwd' in data) || typeof data.cwd !== 'string') {
@@ -353,11 +390,11 @@ export class TerminalPanel {
         this.terminal.options.disableStdin = state.kind !== 'running' && state.kind !== 'starting';
         if (this.terminal.textarea instanceof HTMLTextAreaElement) this.terminal.textarea.readOnly = state.kind !== 'running';
         this.element.dataset.state = state.kind;
-        const labels = {idle: '未起動', starting: '起動中…', running: '実行中', closing: '終了中…', failed: '起動・接続失敗', exited: '終了'};
+        const labels = {idle: '未起動', checking: '導入状態を確認中…', uninstalled: '未インストール', starting: '起動中…', running: '実行中', closing: '終了中…', failed: '起動・接続失敗', exited: '終了'};
         this.status.textContent = state.kind === 'exited' ? `終了（コード ${state.exitCode}）` : labels[state.kind];
-        this.startButton.hidden = state.kind === 'running' || state.kind === 'starting' || state.kind === 'closing';
-        this.startButton.textContent = state.kind === 'idle' ? '開始' : '再起動';
-        this.startButton.setAttribute('aria-label', state.kind === 'idle' ? 'ターミナルを開始' : 'ターミナルを再起動');
+        this.startButton.hidden = state.kind === 'checking' || state.kind === 'running' || state.kind === 'starting' || state.kind === 'closing';
+        this.startButton.textContent = state.kind === 'uninstalled' ? 'インストール' : state.kind === 'idle' ? '開始' : '再起動';
+        this.startButton.setAttribute('aria-label', `${this.kind === 'ai' ? 'AI' : 'ターミナル'}を${this.startButton.textContent}`);
         this.closeButton.hidden = state.kind !== 'running' && state.kind !== 'closing';
         this.closeButton.disabled = state.kind === 'closing';
         this.startButton.disabled = !isWorkspaceTrusted();

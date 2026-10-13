@@ -4,7 +4,7 @@ import type {DebugConsole} from "./debug-console";
 import type {UiStateStore} from "../app/ui-state";
 import type {TerminalPanel} from "./terminal-panel";
 
-export type BottomTab = 'problems' | 'debug' | 'terminal';
+export type BottomTab = 'problems' | 'debug' | 'ai' | 'terminal';
 
 /**
  * ボトムパネル
@@ -25,17 +25,20 @@ export class BottomPanel {
     private readonly validationPanel: ValidationPanel;
     private readonly debugConsole: DebugConsole;
     private readonly terminalPanel: TerminalPanel;
+    private readonly aiPanel: TerminalPanel;
     private readonly problemsTabBtn: HTMLElement;
     private readonly debugTabBtn: HTMLElement;
     private readonly terminalTabBtn: HTMLElement;
+    private readonly aiTabBtn: HTMLElement;
     private readonly clearBtn: HTMLElement;
     private readonly uiStateStore: UiStateStore;
     private activeTab: BottomTab;
 
-    constructor(validationPanel: ValidationPanel, debugConsole: DebugConsole, terminalPanel: TerminalPanel, uiStateStore: UiStateStore) {
+    constructor(validationPanel: ValidationPanel, debugConsole: DebugConsole, terminalPanel: TerminalPanel, aiPanel: TerminalPanel, uiStateStore: UiStateStore) {
         this.validationPanel = validationPanel;
         this.debugConsole = debugConsole;
         this.terminalPanel = terminalPanel;
+        this.aiPanel = aiPanel;
         this.uiStateStore = uiStateStore;
         const storedState = this.uiStateStore.getState().bottomPanel;
         this.activeTab = storedState.activeTab;
@@ -62,9 +65,11 @@ export class BottomPanel {
 
         this.problemsTabBtn = this.createTabBtn('PROBLEMS', 'problems');
         this.debugTabBtn = this.createTabBtn('DEBUG CONSOLE', 'debug');
+        this.aiTabBtn = this.createTabBtn('AI', 'ai');
         this.terminalTabBtn = this.createTabBtn('TERMINAL', 'terminal');
         tabBar.appendChild(this.problemsTabBtn);
         tabBar.appendChild(this.debugTabBtn);
+        tabBar.appendChild(this.aiTabBtn);
         tabBar.appendChild(this.terminalTabBtn);
 
         // DEBUG CONSOLE 固有のクリアボタン（アクティブタブに応じて表示切替）
@@ -102,6 +107,7 @@ export class BottomPanel {
         // 各コンテンツをパネル内に追加する（表示/非表示は applyTabState で管理）
         validationPanel.appendTo(panel);
         debugConsole.appendTo(panel);
+        aiPanel.appendTo(panel);
         terminalPanel.appendTo(panel);
 
         this.applyTabState();
@@ -149,6 +155,7 @@ export class BottomPanel {
         this.element.style.display = '';
         this.applyTabState();
         if (tab === 'terminal') this.terminalPanel.activate();
+        if (tab === 'ai') this.aiPanel.activate();
         this.uiStateStore.setBottomPanelState({
             visible: true,
             activeTab: this.activeTab,
@@ -159,6 +166,7 @@ export class BottomPanel {
     private hide(): void {
         const height = this.element.getBoundingClientRect().height;
         this.terminalPanel.setVisible(false);
+        this.aiPanel.setVisible(false);
         this.element.style.display = 'none';
         this.uiStateStore.setBottomPanelState({
             visible: false,
@@ -171,10 +179,12 @@ export class BottomPanel {
         this.problemsTabBtn.classList.toggle('bottom-panel-tab-active', this.activeTab === 'problems');
         this.debugTabBtn.classList.toggle('bottom-panel-tab-active', this.activeTab === 'debug');
         this.terminalTabBtn.classList.toggle('bottom-panel-tab-active', this.activeTab === 'terminal');
+        this.aiTabBtn.classList.toggle('bottom-panel-tab-active', this.activeTab === 'ai');
         // clearBtn は DEBUG CONSOLE タブのときのみ表示する
         this.clearBtn.style.display = this.activeTab === 'debug' ? '' : 'none';
         this.validationPanel.setVisible(this.activeTab === 'problems');
         this.debugConsole.setVisible(this.activeTab === 'debug');
         this.terminalPanel.setVisible(this.activeTab === 'terminal' && this.element.style.display !== 'none');
+        this.aiPanel.setVisible(this.activeTab === 'ai' && this.element.style.display !== 'none');
     }
 }

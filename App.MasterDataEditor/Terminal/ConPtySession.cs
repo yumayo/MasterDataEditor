@@ -143,6 +143,11 @@ internal sealed class ConPtySession : IDisposable
 
     public static ConPtySession Start(string workingDirectory, int columns, int rows, Func<string, Task> onOutput)
     {
+        return StartCommand(workingDirectory, "-NoLogo", columns, rows, onOutput);
+    }
+
+    public static ConPtySession StartCommand(string workingDirectory, string arguments, int columns, int rows, Func<string, Task> onOutput)
+    {
         ValidateDimensions(columns, rows);
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763)) throw new PlatformNotSupportedException("ターミナルには Windows 10 バージョン 1809 以降が必要です。");
         if (!Directory.Exists(workingDirectory)) throw new DirectoryNotFoundException($"作業フォルダーが存在しません: {workingDirectory}");
@@ -189,7 +194,7 @@ internal sealed class ConPtySession : IDisposable
                 AttributeList = attributes
             };
             // 実行開始前に Job へ所属させ、開始直後に作られた子プロセスも確実に回収する。
-            if (!ConPtyNative.CreateProcess(shell, new StringBuilder($"\"{shell}\" -NoLogo"), IntPtr.Zero, IntPtr.Zero, false, ConPtyNative.ExtendedStartupInfoPresent | ConPtyNative.CreateSuspended, IntPtr.Zero, workingDirectory, ref startup, out var information)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (!ConPtyNative.CreateProcess(shell, new StringBuilder($"\"{shell}\" {arguments}"), IntPtr.Zero, IntPtr.Zero, false, ConPtyNative.ExtendedStartupInfoPresent | ConPtyNative.CreateSuspended, IntPtr.Zero, workingDirectory, ref startup, out var information)) throw new Win32Exception(Marshal.GetLastWin32Error());
             process = new SafeFileHandle(information.Process, true);
             thread = new SafeFileHandle(information.Thread, true);
             if (!ConPtyNative.AssignProcessToJobObject(job, process)) throw new Win32Exception(Marshal.GetLastWin32Error());

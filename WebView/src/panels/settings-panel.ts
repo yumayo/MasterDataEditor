@@ -1,3 +1,4 @@
+import {isTerminalKeyboardTarget} from "./terminal-panel";
 import {ToggleControl} from "../ui/toggle-control";
 import {readFileAsync, writeFileAsync, openWorkspaceTrustSettingsAsync, type FileScope} from "../app/api";
 import {notifyNativeTheme} from "../app/native-theme";
@@ -424,7 +425,7 @@ export class SettingsPanel {
         this.undoStack = [];
         this.redoStack = [];
         this.documentKeydownHandler = (event: KeyboardEvent) => {
-            if (event.target instanceof Element && event.target.closest('.terminal-panel') !== null) return;
+            if (isTerminalKeyboardTarget(event.target)) return;
             if (!this.isVisible()) return;
             this.handleKeyDown(event);
         };

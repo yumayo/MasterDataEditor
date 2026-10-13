@@ -329,7 +329,7 @@ public class WebView2Handler : IDisposable
 					// リクエストIDを抽出する（並列リクエストのレスポンス照合に使用）
 					var requestId = root.TryGetProperty("requestId", out var ridElement) ? ridElement.GetString() ?? "" : "";
 
-                    if (messageType != null && (messageType.StartsWith("git_", StringComparison.Ordinal) || messageType == "terminal_start_request") && !WorkspaceTrust.IsTrusted(AppEnvironment.GetWorkDir()))
+                    if (messageType != null && (messageType.StartsWith("git_", StringComparison.Ordinal) || messageType == "terminal_start_request" || messageType.StartsWith("terminal_ai_", StringComparison.Ordinal)) && !WorkspaceTrust.IsTrusted(AppEnvironment.GetWorkDir()))
                     {
                         SendMessageToWebView(new {type = messageType.Replace("_request", "_response", StringComparison.Ordinal), requestId, sessionId = root.TryGetProperty("sessionId", out var sid) ? sid.GetString() : "", success = false, error = "制限モードでは Git とターミナルを使用できません。ウィンドウ上部で作業フォルダーの信頼を確認してください。"});
                         return;
@@ -364,6 +364,9 @@ public class WebView2Handler : IDisposable
 							if (!_terminalNavigationPending && IsTrustedTerminalSource(e.Source) && IsTrustedTerminalSource(_webView2.CoreWebView2.Source)) _terminalHost.HandleOutputAcknowledgement(root);
 							break;
 
+						case "terminal_ai_status_request":
+						case "terminal_ai_start_request":
+						case "terminal_ai_install_request":
 						case "terminal_start_request":
 						case "terminal_input_request":
 						case "terminal_resize_request":

@@ -145,8 +145,9 @@ import {ViewPluginHost} from "../plugins/view-plugin-host";
     // StatusBar は起動直後にDOMだけ先行描画済み。
     // ここで PROBLEMS パネル操作に必要な BottomPanel を接続する。
     const validationPanel = new ValidationPanel(validationEngine, tab, statusBar, store, debugConsole, pluginValidationRunner);
-    const terminalPanel = new TerminalPanel(notification, document.body);
-    const bottomPanel = new BottomPanel(validationPanel, debugConsole, terminalPanel, uiStateStore);
+    const terminalPanel = new TerminalPanel(notification, document.body, 'terminal');
+    const aiPanel = new TerminalPanel(notification, document.body, 'ai');
+    const bottomPanel = new BottomPanel(validationPanel, debugConsole, terminalPanel, aiPanel, uiStateStore);
     bindStatusBarActions(statusBarActions, bottomPanel);
 
     window.addEventListener(SETTINGS_CHANGED_EVENT, (event: Event) => {

@@ -1,4 +1,4 @@
-.terminal-panel {
+:is(.terminal-panel, .ai-terminal-panel) {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -9,11 +9,11 @@
     color: var(--font-color);
 }
 
-.terminal-panel[hidden], .terminal-panel [hidden] {
+:is(.terminal-panel, .ai-terminal-panel)[hidden], :is(.terminal-panel, .ai-terminal-panel) [hidden] {
     display: none;
 }
 
-.terminal-toolbar {
+:is(.terminal-toolbar, .ai-terminal-toolbar) {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -23,11 +23,11 @@
     border-bottom: 1px solid var(--subtle-border-color);
 }
 
-.terminal-status {
+:is(.terminal-status, .ai-terminal-status) {
     flex-shrink: 0;
 }
 
-.terminal-location {
+:is(.terminal-location, .ai-terminal-location) {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -35,7 +35,7 @@
     color: var(--secondary-font-color);
 }
 
-.terminal-action {
+:is(.terminal-action, .ai-terminal-action) {
     font: inherit;
     color: inherit;
     background: var(--background-sub-color);
@@ -45,16 +45,16 @@
     cursor: pointer;
 }
 
-.terminal-action:hover {
+:is(.terminal-action, .ai-terminal-action):hover {
     background: var(--hover-color);
 }
 
-.terminal-action:focus-visible {
+:is(.terminal-action, .ai-terminal-action):focus-visible {
     outline: 1px solid var(--focus-border);
     outline-offset: 1px;
 }
 
-.terminal-host {
+:is(.terminal-host, .ai-terminal-host) {
     flex: 1;
     min-width: 0;
     min-height: 0;
@@ -62,13 +62,13 @@
     overflow: hidden;
 }
 
-.terminal-host .xterm {
+:is(.terminal-host, .ai-terminal-host) .xterm {
     height: 100%;
     color: var(--font-color);
     background-color: var(--background-color);
 }
 
 /* xterm 6のテーマ対象外のviewportにも、行の端数領域と同じ背景を指定する。 */
-.terminal-host .xterm .xterm-viewport {
+:is(.terminal-host, .ai-terminal-host) .xterm .xterm-viewport {
     background-color: var(--background-color);
 }

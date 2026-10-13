@@ -15,6 +15,17 @@ WPF アプリ内で Windows PowerShell を使用できます。画面は xterm.j
 
 Windows 10 バージョン 1809 以降が必要です。シェルには Windows 標準の `WindowsPowerShell\v1.0\powershell.exe -NoLogo` を使い、アプリと同じ権限で起動します。ブラウザーだけで起動した開発画面では、WPF バックエンドによる実シェルは使用できません。コマンドが変更するファイルやプロセスはエディターの Undo/Redo の対象外です。
 
+## AI 専用ターミナル
+
+ステータスバーと下部タブの `TERMINAL` の左にある `AI` をクリックすると、Claude 用の端末領域を開きます。未信頼の作業フォルダーでは通常端末と同じく使用できません。
+
+- 初回は導入状態を確認し、未導入なら `インストール` ボタンを表示します。クリックすると `https://github.com/yumayo/ai-container.git` を clone し、続けて Windows PowerShell で起動します。Git、WSL、Docker などの実行環境と接続は Windows 側に必要です。進捗とスクリプトの出力は AI 端末内に表示されます。
+- 配置先は `AppEnvironment.GetUserDataDir()/ai-container` です。通常は `%APPDATA%/App.MasterDataEditor/projects/<作業フォルダー識別名>/ai-container`、`MASTER_DATA_EDITOR_USERDATA_DIR` 指定時はその配下の `projects/<作業フォルダー識別名>/ai-container` になります。ワークスペース別に保持し、この配置先の `.git` ディレクトリと `start-wsl-containers.ps1` を導入判定に使います。
+- 既存 clone があれば clone を省略します。空フォルダーだけでは導入済みとせず、既存 clone のスクリプトが欠落している場合は出力とエラー通知で知らせます。既存フォルダーや clone の内容を削除・更新しません。clone は固有の一時ディレクトリへ行い、成功後に配置先へ移動するので、取得失敗後も再試行できます。
+- 導入済みなら AI を開いた時点で起動します。実行する子プロセスは `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <clone内のstart-wsl-containers.ps1> -Workspace <AppEnvironment.GetWorkDir()> -Tool claude` です。スクリプトの実行ディレクトリは clone 内、Workspace はエディターが認識する作業フォルダーです。ブラウザーからパスやコマンドを指定することはできません。
+- AI と通常の TERMINAL は独立したセッションで、各１つまで同時に実行できます。タブ切り替えやパネルの非表示でも出力と実行を維持します。`終了` と `再起動` は対象の端末だけに適用します。非ゼロの終了コードは汎用通知に表示し、再起動時には導入状態を確認し直します。
+- 保存された AI タブを画面起動時に復元しても、自動ではプロセスを実行しません。AI タブまたは `開始` の明示操作で起動します。信頼解除、ページ離脱、アプリ終了では両端末を回収します。端末を終了しても ai-container が Docker 側で作成したコンテナーや生成ファイルの削除は行いません。
+
 ## Windows での確認
 
 リポジトリのルートから、.NET 10 SDK が入っている Windows のターミナルで実行してください。
@@ -25,6 +36,8 @@ dotnet run --project .\WebView\e2e\fixtures\terminal\Terminal.Tests.csproj
 
 追加の NuGet パッケージや WPF の起動を必要としない検証用プログラムです。まず OS 共通で、出力 ACK の順序・取消・送信失敗と、実際の `TerminalHost` の要求順序・不正起動・ページ遷移を検証します。Windows では続けて実 ConPTY を起動し、日本語を含む作業フォルダー、UTF-8 と絵文字、ANSI 色、入力順序、リサイズ、終了コード、大量出力中の終了、子プロセスの回収、再起動、ACK が返らない状態での停止を検証します。対応する Windows 以外では実 ConPTY の項目だけ `SKIP` と表示します。このスキップは実 ConPTY の動作確認に成功したという意味ではありません。
 
+AI の fixture は OS 共通で導入状態と固定起動契約を、Windows では既存 clone の再利用、空白・日本語・単一引用符・末尾区切りを含む Workspace の受け渡し、子 PowerShell の終了コードを検証します。また通常端末と AI の同時起動、重複拒否、片方の終了、再起動、ページ破棄による全セッション回収を実 ConPTY で検証します。fixture はテスト用スクリプトを使い、外部 clone やコンテナーの起動を行いません。
+
 続いて WPF アプリを起動し、未信頼ではターミナルを開始できないことを確認します。ウィンドウ上部で作業フォルダーを信頼してから、次を確認してください。
 
 1. `TERMINAL` を開き、`Get-Location` がプロジェクトの作業フォルダーを表示する。
@@ -33,10 +46,12 @@ dotnet run --project .\WebView\e2e\fixtures\terminal\Terminal.Tests.csproj
 4. パネルの高さ・ウィンドウ幅を変え、カーソルと折り返しが追従する。
 5. `exit 7` で終了コードが表示され、`再起動` で新しいシェルが開く。
 6. 長時間実行中のコマンドを `終了` ボタンとアプリ終了の両方で停止し、子プロセスが残らないことを確認する。
+7. `AI` → `インストール` で clone と起動ログを確認し、Claude に入力できる。通常の `TERMINAL` を同時に開き、出力と入力が混ざらない。
+8. AI を終了して再起動し clone が繰り返されず、スクリプトへ現在のワークスペースが渡る。パネル非表示時の継続、信頼解除時の両端末終了も確認する。
 
 Linux コンテナからは C# のコンパイルとフロントエンドのテストを実行できますが、Windows の ConPTY と WebView2 の接続は上記の Windows 確認が必要です。
 
-## この変更の検証状況
+## 通常ターミナル導入時の検証記録
 
 - TypeScript の型検査（`--noEmit`）と通常の `npm run build` が成功し、ターミナルの Playwright テストは 18 件すべて成功しました。明暗テーマとリサイズ後の画面も確認し、黒帯が残らないことを確認しています。
 - C# fixture は警告 0・エラー 0 でビルドでき、出力 ACK と TerminalHost のオフライン検証が成功しました。実 ConPTY の項目は Linux のため `SKIP` です。
@@ -44,11 +59,19 @@ Linux コンテナからは C# のコンパイルとフロントエンドのテ�
 
 Windows 上の実 ConPTY と WPF の操作確認は未実施です。WPF アプリ全体のビルドは、検証用コンテナに `ModelContextProtocol.Core 1.1.0` がないため `NETSDK1064` で停止しています。Windows 側で必要な NuGet パッケージを用意してアプリをビルドし、上記の実機確認を行ってください。
 
+## AI 専用ターミナル追加時の検証記録
+
+- TypeScript の型検査（`--noEmit`）は成功しました。AI の Playwright 12 件はすべて成功し、導入・再試行・通常端末との分離・非同期確認後のフォーカス保持を確認しました。未導入画面は幅400pxのライトテーマ（サイドバーを閉じた状態）と幅800pxのダークテーマ、実行中の出力は幅1280pxのライトテーマでスクリーンショットとDOMも確認しています。
+- 最終 Playwright 全 1,566 件は 1,563 件成功、3 件失敗でした。失敗は `column-resize-auto-fit.spec.ts:433` と `:628` の列幅（期待180、実測96）、`diff-column-width-persist.spec.ts:190` の列幅（期待136px、実測173px）です。変更前の `5cfc936` を隔離した worktree で同じ2 specの25件を再実行しても、22件成功・同じ3件失敗となり、期待値・実測値も一致しました。今回のAI変更による回帰ではありません。
+- C# fixture のOS共通の検証は成功しました。AIの導入判定・起動契約・作業フォルダー・信頼保護などを確認しています。実PowerShellの引数受け渡しとConPTYの同時起動・終了を検証するWindows向けfixtureは、Linux環境のため `SKIP` です。実際のai-containerのclone・WSL/Docker接続も別途Windows実機で確認する必要があり、これらの実機動作は未検証です。
+- WPFアプリ本体の `dotnet build --no-restore` は、検証用コンテナに `ModelContextProtocol.Core 1.1.0` がないため完了できませんでした。本体ビルドとWindows上の操作確認は、必要な依存関係を用意したWindows環境で上記手順を実施してください。
+
 ## 実装
 
 - `App.MasterDataEditor/Terminal/ConPtyNative.cs`: Windows API 宣言。
 - `App.MasterDataEditor/Terminal/ConPtySession.cs`: PowerShell の起動、専用スレッドによる入出力、UTF-8 デコード、リサイズ、Job Object による子プロセスの回収。
-- `App.MasterDataEditor/Terminal/TerminalHost.cs`: 単一セッションと WebView のドキュメント寿命、端末専用の要求キュー、応答と出力通知。
+- `App.MasterDataEditor/Terminal/TerminalHost.cs`: 通常 / AI の独立セッションと WebView のドキュメント寿命、端末専用の要求キュー、応答と出力通知。
+- `App.MasterDataEditor/Terminal/AiTerminalLauncher.cs`: AI の配置・導入判定・安全な PowerShell 引数と clone の実行手順。
 - `App.MasterDataEditor/Terminal/TerminalOutputFlow.cs`: xterm.js の出力処理完了 ACK を待機し、セッション終了やページ遷移で解除する。
 - `WebView/src/panels/terminal-panel.ts`: xterm.js の表示、入力・出力、起動・終了・再起動、サイズとテーマの追従。
 

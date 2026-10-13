@@ -16,6 +16,8 @@ export interface TerminalMockRequest {
 }
 
 interface TerminalMockState extends TerminalMockOptions {
+    aiInstalled: boolean;
+    aiStatusDelayMs: number;
     requests: TerminalMockRequest[];
     closeExitCode: number;
     dispatch(data: object): void;
@@ -32,6 +34,8 @@ export async function installTerminalMockAsync(page: Page, options: TerminalMock
         const mockWindow = window as unknown as TerminalMockWindow;
         mockWindow.__mockTerminal = {
             ...config,
+            aiInstalled: false,
+            aiStatusDelayMs: 0,
             requests: [],
             closeExitCode: 0,
             dispatch(): void { throw new Error('ターミナルの初回リクエストがまだありません'); },
@@ -46,11 +50,16 @@ export async function installTerminalMockAsync(page: Page, options: TerminalMock
                 requestId: request.requestId,
                 sessionId: request.sessionId,
             };
-            if (request.type === 'terminal_start_request') {
+            if (request.type === 'terminal_ai_status_request') {
+                window.setTimeout(() => dispatch({...response, success: true, data: {installed: state.aiInstalled, cwd: 'C:\\作業 workspace', installationDirectory: 'C:\\User Data\\ai-container'}}), state.aiStatusDelayMs);
+                return;
+            }
+            if (request.type === 'terminal_start_request' || request.type === 'terminal_ai_start_request' || request.type === 'terminal_ai_install_request') {
                 window.setTimeout(() => {
                     if (state.startError !== null) {
                         dispatch({...response, success: false, error: state.startError, stack: 'at MockTerminal.Start()'});
                     } else {
+                        if (request.type === 'terminal_ai_install_request') state.aiInstalled = true;
                         dispatch({...response, success: true, data: {shell: 'Windows PowerShell', cwd: 'C:\\workspace'}});
                     }
                 }, state.startDelayMs);
@@ -84,4 +93,13 @@ export async function clearTerminalStartErrorAsync(page: Page): Promise<void> {
 
 export async function configureTerminalCloseExitAsync(page: Page, exitCode: number): Promise<void> {
     await page.evaluate(code => { (window as unknown as TerminalMockWindow).__mockTerminal.closeExitCode = code; }, exitCode);
+}
+
+export async function installAiTerminalMockAsync(page: Page, options: TerminalMockOptions & {installed: boolean; statusDelayMs: number}): Promise<void> {
+    await installTerminalMockAsync(page, options);
+    await page.addInitScript(config => {
+        const state = (window as unknown as TerminalMockWindow).__mockTerminal;
+        state.aiInstalled = config.installed;
+        state.aiStatusDelayMs = config.statusDelayMs;
+    }, options);
 }

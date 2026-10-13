@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Threading.Channels;
 using App.MasterDataEditor.Terminal;
+using App.MasterDataEditor;
 
 internal static class TerminalHostChecks
 {
@@ -24,6 +25,18 @@ internal static class TerminalHostChecks
             if (invalid.GetProperty("success").GetBoolean() || !invalid.GetProperty("stack").GetString()!.Contains("ArgumentOutOfRangeException", StringComparison.Ordinal)) throw new Exception("開始失敗後にセッションが残るか、サイズ検証が失われました。");
         }
 
+        host.HandleRequest(JsonSerializer.SerializeToElement(new { type = "terminal_ai_status_request", requestId = "ai-status", sessionId = "ai", workspace = "C:\\browser-supplied" }));
+        var aiStatus = await responses.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        if (!aiStatus.GetProperty("success").GetBoolean() || aiStatus.GetProperty("data").GetProperty("cwd").GetString() != AppEnvironment.GetWorkDir()) throw new Exception("AI がアプリの作業フォルダーを使用していません。");
+        WorkspaceTrust.Revoke();
+        foreach (var type in new[] { "terminal_ai_status_request", "terminal_ai_start_request", "terminal_ai_install_request" })
+        {
+            host.HandleRequest(JsonSerializer.SerializeToElement(new { type, requestId = type, sessionId = "untrusted", cols = 80, rows = 24 }));
+            var denied = await responses.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+            if (denied.GetProperty("success").GetBoolean() || !denied.GetProperty("stack").GetString()!.Contains("UnauthorizedAccessException", StringComparison.Ordinal)) throw new Exception("未信頼の AI 操作が拒否されませんでした。");
+        }
+        WorkspaceTrust.GrantFromNativeUi(AppEnvironment.GetWorkDir());
+
         // ドキュメントを破棄した時点で Dispatcher 待ちと旧要求を解除する。
         var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var navigatingHost = new TerminalHost(async (message, token) =>
@@ -43,7 +56,53 @@ internal static class TerminalHostChecks
         navigatingHost.HandleRequest(JsonSerializer.SerializeToElement(new { type = "terminal_close_request", requestId = "new-document", sessionId = "missing" }));
         var current = await responses.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
         if (current.GetProperty("requestId").GetString() != "new-document") throw new Exception("旧ドキュメントの要求が新ドキュメントへ混入しました。");
-        Console.WriteLine("PASS: Host 要求 FIFO・未起動入力・遅延 close・不正開始からの回復・ACK 分離・ドキュメント取消");
+        Console.WriteLine("PASS: Host 要求 FIFO・未起動入力・遅延 close・不正開始からの回復・ACK 分離・ドキュメント取消・AI 作業フォルダーと信頼保護");
+    }
+
+    public static async Task RunWindowsAsync()
+    {
+        var repository = Path.Combine(AppEnvironment.GetUserDataDir(), "ai-container");
+        Directory.CreateDirectory(Path.Combine(repository, ".git"));
+        await File.WriteAllTextAsync(Path.Combine(repository, "start-wsl-containers.ps1"), "param([string]$Workspace, [string]$Tool)\nWrite-Output 'AI_HOST_READY'\nStart-Sleep -Seconds 300");
+        try
+        {
+            var messages = Channel.CreateUnbounded<JsonElement>();
+            using var host = new TerminalHost((message, token) => messages.Writer.WriteAsync(JsonSerializer.SerializeToElement(message), token).AsTask());
+            host.HandleRequest(JsonSerializer.SerializeToElement(new { type = "terminal_start_request", requestId = "shell-start", sessionId = "shell", cols = 80, rows = 24 }));
+            if (!(await ReadResponseAsync(host, messages, "shell-start")).GetProperty("success").GetBoolean()) throw new Exception("通常端末を開始できません。");
+            host.HandleRequest(JsonSerializer.SerializeToElement(new { type = "terminal_ai_install_request", requestId = "ai-start", sessionId = "ai", cols = 80, rows = 24 }));
+            if (!(await ReadResponseAsync(host, messages, "ai-start")).GetProperty("success").GetBoolean()) throw new Exception("通常端末と AI を同時に開始できません。");
+            foreach (var type in new[] { "terminal_start_request", "terminal_ai_start_request", "terminal_ai_install_request" })
+            {
+                host.HandleRequest(JsonSerializer.SerializeToElement(new { type, requestId = type, sessionId = "duplicate", cols = 80, rows = 24 }));
+                if ((await ReadResponseAsync(host, messages, type)).GetProperty("success").GetBoolean()) throw new Exception("同じ種類の端末を重複起動できました。");
+            }
+            host.HandleRequest(JsonSerializer.SerializeToElement(new { type = "terminal_close_request", requestId = "ai-close", sessionId = "ai" }));
+            if (!(await ReadResponseAsync(host, messages, "ai-close")).GetProperty("success").GetBoolean()) throw new Exception("AI を終了できません。");
+            host.HandleRequest(JsonSerializer.SerializeToElement(new { type = "terminal_input_request", requestId = "shell-alive", sessionId = "shell", data = "Write-Output 'SHELL_ALIVE'\r" }));
+            if (!(await ReadResponseAsync(host, messages, "shell-alive")).GetProperty("success").GetBoolean()) throw new Exception("AI 終了で通常端末まで終了しました。");
+            host.HandleRequest(JsonSerializer.SerializeToElement(new { type = "terminal_ai_start_request", requestId = "ai-restart", sessionId = "ai-new", cols = 80, rows = 24 }));
+            if (!(await ReadResponseAsync(host, messages, "ai-restart")).GetProperty("success").GetBoolean()) throw new Exception("AI を再起動できません。");
+            host.ResetDocument();
+            foreach (var sessionId in new[] { "shell", "ai-new" })
+            {
+                host.HandleRequest(JsonSerializer.SerializeToElement(new { type = "terminal_input_request", requestId = sessionId, sessionId, data = "x" }));
+                if ((await ReadResponseAsync(host, messages, sessionId)).GetProperty("success").GetBoolean()) throw new Exception("ドキュメント破棄後に端末が残りました。");
+            }
+            Console.WriteLine("PASS: 通常端末と AI の同時起動・種類ごとの重複拒否・終了の分離・AI 再起動・全セッション回収");
+        }
+        finally { Directory.Delete(AppEnvironment.GetUserDataDir(), true); }
+    }
+
+    private static async Task<JsonElement> ReadResponseAsync(TerminalHost host, Channel<JsonElement> messages, string requestId)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (true)
+        {
+            var message = await messages.Reader.ReadAsync(timeout.Token);
+            if (message.GetProperty("type").GetString() == "terminal_output") host.HandleOutputAcknowledgement(message);
+            if (message.TryGetProperty("requestId", out var id) && id.GetString() == requestId) return message;
+        }
     }
 }
 
@@ -52,7 +111,9 @@ namespace App.MasterDataEditor
 {
     internal static class AppEnvironment
     {
+        private static readonly string UserDataDirectory = Path.Combine(Path.GetTempPath(), "master-data-ai-fixture-" + Guid.NewGuid().ToString("N"));
         public static string GetWorkDir() => Path.GetTempPath();
+        public static string GetUserDataDir() => UserDataDirectory;
     }
 
     internal static class Logger

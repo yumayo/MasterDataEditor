@@ -7,11 +7,11 @@ using System.Threading.Tasks;
 
 namespace App.MasterDataEditor.Terminal;
 
-/// <summary>WebView の要求を順序付けし、ひとつのドキュメントにひとつの端末を所有させる。</summary>
+/// <summary>WebView の要求を順序付けし、ドキュメントごとに通常端末と AI 専用端末を各１つ所有させる。</summary>
 internal sealed class TerminalHost : IDisposable
 {
     private readonly Func<object, CancellationToken, Task> _sendAsync;
-    private readonly Dictionary<string, ConPtySession> _sessions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string Kind, ConPtySession Session)> _sessions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TerminalOutputFlow> _outputs = new(StringComparer.Ordinal);
     private readonly object _sync = new();
     private CancellationTokenSource _documentLifetime = new();
@@ -79,11 +79,22 @@ internal sealed class TerminalHost : IDisposable
             if (sessionId.Length == 0 || sessionId.Length > 128) throw new ArgumentException("端末セッション ID が不正です。");
             switch (requestType)
             {
-                case "terminal_start_request":
+                case "terminal_ai_status_request":
                 {
+                    var workingDirectory = AppEnvironment.GetWorkDir();
+                    var repository = System.IO.Path.Combine(AppEnvironment.GetUserDataDir(), "ai-container");
+                    var installed = WorkspaceTrust.ExecuteTrusted(workingDirectory, trustGeneration, () => new AiTerminalLauncher(repository).IsInstalled());
+                    await SendAsync(new { type = responseType, requestId, sessionId, success = true, data = new { installed, cwd = workingDirectory } }, token).ConfigureAwait(false);
+                    break;
+                }
+                case "terminal_start_request":
+                case "terminal_ai_start_request":
+                case "terminal_ai_install_request":
+                {
+                    var kind = requestType == "terminal_start_request" ? "terminal" : "ai";
                     lock (_sync)
                     {
-                        if (_sessions.Count > 0) throw new InvalidOperationException("ターミナルはすでに起動しています。");
+                        if (_sessions.ContainsKey(sessionId) || _sessions.Values.Any(value => value.Kind == kind)) throw new InvalidOperationException("この種類のターミナルはすでに起動しています。");
                     }
                     var workingDirectory = AppEnvironment.GetWorkDir();
                     var columns = request.GetProperty("cols").GetInt32();
@@ -94,7 +105,12 @@ internal sealed class TerminalHost : IDisposable
                     ConPtySession terminal;
                     try
                     {
-                        terminal = WorkspaceTrust.ExecuteTrusted(AppEnvironment.GetWorkDir(), trustGeneration, () => ConPtySession.Start(workingDirectory, columns, rows, flow.SendAsync));
+                        terminal = WorkspaceTrust.ExecuteTrusted(workingDirectory, trustGeneration, () =>
+                        {
+                            if (kind == "terminal") return ConPtySession.Start(workingDirectory, columns, rows, flow.SendAsync);
+                            var launcher = new AiTerminalLauncher(System.IO.Path.Combine(AppEnvironment.GetUserDataDir(), "ai-container"));
+                            return ConPtySession.StartCommand(workingDirectory, launcher.CreateArguments(workingDirectory, requestType == "terminal_ai_install_request"), columns, rows, flow.SendAsync);
+                        });
                     }
                     catch
                     {
@@ -113,10 +129,10 @@ internal sealed class TerminalHost : IDisposable
                         }
                         return;
                     }
-                    lock (_sync) _sessions.Add(sessionId, terminal);
+                    lock (_sync) _sessions.Add(sessionId, (kind, terminal));
                     // 終了監視は要求キューを占有せず、起動直後に exit した場合も観測する。
                     _ = ObserveExitAsync(sessionId, terminal, flow, token);
-                    await SendAsync(new { type = responseType, requestId, sessionId, success = true, data = new { shell = "Windows PowerShell", cwd = workingDirectory } }, token).ConfigureAwait(false);
+                    await SendAsync(new { type = responseType, requestId, sessionId, success = true, data = new { shell = kind == "ai" ? "Claude · Windows PowerShell" : "Windows PowerShell", cwd = workingDirectory } }, token).ConfigureAwait(false);
                     break;
                 }
                 case "terminal_input_request":
@@ -137,7 +153,7 @@ internal sealed class TerminalHost : IDisposable
                     TerminalOutputFlow? flow;
                     lock (_sync)
                     {
-                        _sessions.Remove(sessionId, out terminal);
+                        terminal = _sessions.Remove(sessionId, out var owned) ? owned.Session : null;
                         _outputs.Remove(sessionId, out flow);
                     }
                     // ACK と Dispatcher 待ちを先に解除し、ConPTY の flush は reader が読み捨てる。
@@ -170,7 +186,7 @@ internal sealed class TerminalHost : IDisposable
     {
         lock (_sync)
         {
-            if (_sessions.TryGetValue(sessionId, out var session)) return session;
+            if (_sessions.TryGetValue(sessionId, out var session)) return session.Session;
         }
         throw new InvalidOperationException("ターミナルは終了しています。再起動してください。");
     }
@@ -190,7 +206,10 @@ internal sealed class TerminalHost : IDisposable
         {
             lock (_sync)
             {
-                if (_sessions.TryGetValue(sessionId, out var current) && ReferenceEquals(current, terminal)) _sessions.Remove(sessionId);
+                if (_sessions.TryGetValue(sessionId, out var current) && ReferenceEquals(current.Session, terminal))
+                {
+                    _sessions.Remove(sessionId);
+                }
                 if (_outputs.TryGetValue(sessionId, out var output) && ReferenceEquals(output, flow)) _outputs.Remove(sessionId);
             }
             flow.Dispose();
@@ -219,7 +238,7 @@ internal sealed class TerminalHost : IDisposable
         TerminalOutputFlow[] outputs;
         lock (_sync)
         {
-            sessions = _sessions.Values.ToArray();
+            sessions = _sessions.Values.Select(value => value.Session).ToArray();
             outputs = _outputs.Values.ToArray();
             _sessions.Clear();
             _outputs.Clear();

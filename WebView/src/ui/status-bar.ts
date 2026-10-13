@@ -4,12 +4,14 @@ import type {NotificationToast} from "./notification";
 export interface StatusBarActions {
     toggleProblemsPanel(): void;
     toggleTerminalPanel(): void;
+    toggleAiPanel(): void;
 }
 
 export function createStatusBarActions(): StatusBarActions {
     return {
         toggleProblemsPanel() {},
         toggleTerminalPanel() {},
+        toggleAiPanel() {},
     };
 }
 
@@ -20,6 +22,9 @@ export function bindStatusBarActions(actions: StatusBarActions, bottomPanel: Bot
         },
         toggleTerminalPanel(): void {
             bottomPanel.toggleTab('terminal');
+        },
+        toggleAiPanel(): void {
+            bottomPanel.toggleTab('ai');
         },
     } satisfies StatusBarActions);
 }
@@ -51,7 +56,7 @@ function createStatusBarDom(notification: NotificationToast) {
     notification.appendTo(notificationSlot);
     bar.appendChild(notificationSlot);
 
-    // バックグラウンドタスクインジケーター（TERMINALの左隣に固定領域を確保）
+    // バックグラウンドタスクインジケーター（AI / TERMINALの左隣に固定領域を確保）
     const bgIndicator = document.createElement('div');
     bgIndicator.classList.add('status-bar-background-indicator');
     bgIndicator.setAttribute('role', 'button');
@@ -79,6 +84,14 @@ function createStatusBarDom(notification: NotificationToast) {
     bgIndicator.appendChild(bgPopover);
     bar.appendChild(bgIndicator);
 
+    const aiButton = document.createElement('button');
+    aiButton.type = 'button';
+    aiButton.className = 'status-bar-ai';
+    aiButton.textContent = 'AI';
+    aiButton.setAttribute('aria-label', 'AIターミナルを表示');
+    aiButton.title = 'AIターミナルを表示 / 非表示';
+    bar.appendChild(aiButton);
+
     const terminalButton = document.createElement('button');
     terminalButton.type = 'button';
     terminalButton.className = 'status-bar-terminal';
@@ -96,6 +109,7 @@ function createStatusBarDom(notification: NotificationToast) {
         backgroundCount: bgCountSpan,
         backgroundPopover: bgPopover,
         terminalButton,
+        aiButton,
     };
 }
 
@@ -104,7 +118,7 @@ function createStatusBarDom(notification: NotificationToast) {
  *
  * 画面最下部に常時表示される。
  * 左端: エラー件数バッジ（クリックでBottomPanelのPROBLEMSタブをトグル）
- * TERMINALの左隣: バックグラウンドタスク用の固定領域（実行中のみ表示、クリックでタスク一覧ポップオーバー）
+ * AI / TERMINALの左隣: バックグラウンドタスク用の固定領域（実行中のみ表示、クリックでタスク一覧ポップオーバー）
  * エラー0件でも "0" を表示する。
  *
  * constructor は固定DOMと action port を初期化する。BottomPanel 操作用の action port は
@@ -121,6 +135,7 @@ export class StatusBar {
     private readonly backgroundPopover: HTMLElement;
     private readonly actions: StatusBarActions;
     private readonly terminalButton: HTMLButtonElement;
+    private readonly aiButton: HTMLButtonElement;
 
     constructor(actions: StatusBarActions, notification: NotificationToast) {
         const dom = createStatusBarDom(notification);
@@ -133,6 +148,7 @@ export class StatusBar {
         this.backgroundCount = dom.backgroundCount;
         this.backgroundPopover = dom.backgroundPopover;
         this.terminalButton = dom.terminalButton;
+        this.aiButton = dom.aiButton;
     }
 
     /**
@@ -182,6 +198,7 @@ export class StatusBar {
 
     private attachEventHandlers(): void {
         this.terminalButton.addEventListener('click', () => { this.actions.toggleTerminalPanel(); });
+        this.aiButton.addEventListener('click', () => { this.actions.toggleAiPanel(); });
         this.badge.addEventListener('click', () => { this.toggleProblemsPanel(); });
         this.badge.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') this.toggleProblemsPanel();

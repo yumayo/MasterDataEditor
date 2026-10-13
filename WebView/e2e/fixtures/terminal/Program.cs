@@ -20,6 +20,7 @@ App.MasterDataEditor.WorkspaceTrust.GrantFromNativeUi(App.MasterDataEditor.AppEn
 Console.WriteLine("PASS: 作業フォルダー信頼は既定拒否・解除で旧世代の操作を拒否");
 await TerminalOutputFlowChecks.RunAsync();
 await TerminalHostChecks.RunAsync();
+await AiTerminalLauncherChecks.RunAsync();
 
 // NuGet や WPF に依存せず、Windows 10 1809 以降の実 ConPTY を検証する。
 if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
@@ -27,6 +28,8 @@ if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
     Console.WriteLine("SKIP: ConPTY の実機テストには Windows 10 1809 以降が必要です。");
     return;
 }
+
+await TerminalHostChecks.RunWindowsAsync();
 
 var workingDirectory = Path.Combine(Path.GetTempPath(), "master-data-terminal-日本語-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(workingDirectory);

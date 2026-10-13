@@ -43,7 +43,7 @@
     align-items: center;
 }
 
-.status-bar-terminal {
+:is(.status-bar-terminal, .status-bar-ai) {
     height: 100%;
     flex-shrink: 0;
     border: 0;
@@ -54,11 +54,11 @@
     cursor: pointer;
 }
 
-.status-bar-terminal:hover {
+:is(.status-bar-terminal, .status-bar-ai):hover {
     background-color: var(--hover-color);
 }
 
-.status-bar-terminal:focus-visible {
+:is(.status-bar-terminal, .status-bar-ai):focus-visible {
     outline: 1px solid var(--focus-border);
     outline-offset: -1px;
 }
@@ -74,7 +74,7 @@
     color: var(--error-color);
 }
 
-/* バックグラウンドタスクインジケーター（TERMINALの左隣） */
+/* バックグラウンドタスクインジケーター（AI / TERMINALの左隣） */
 /* 非表示時も領域を維持し、タスクの開始・完了や件数変更で周囲のレイアウトを動かさない */
 .status-bar-background-indicator {
     height: 100%;
@@ -82,7 +82,7 @@
     align-items: center;
     gap: 4px;
     width: 320px;
-    /* 狭い画面では文字領域だけを縮め、スピナー・件数とTERMINALを残す */
+    /* 狭い画面では文字領域だけを縮め、スピナー・件数とAI / TERMINALを残す */
     min-width: 54px;
     padding: 0 8px;
     box-sizing: border-box;
